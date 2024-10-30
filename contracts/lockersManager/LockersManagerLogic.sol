@@ -158,6 +158,14 @@ contract LockersManagerLogic is
                 .isLocker;
     }
 
+    /// @notice Setter for reward distributor
+    /// @dev This contract distributes locker fee between locker and stakers
+    function setRewardDistributor(
+        address _rewardDistributor
+    ) external override onlyOwner {
+        rewardDistributor = _rewardDistributor;
+    }
+
     /// @notice Update TST contract address
     function setTST(address _TST) public override onlyOwner {
         emit NewTST(TeleportSystemToken, _TST);
@@ -980,29 +988,15 @@ contract LockersManagerLogic is
             _amount
         );
 
-        // Mints locker fee
-        uint256 lockerFee = (_amount * lockerPercentageFee) / MAX_LOCKER_FEE;
-        if (lockerFee > 0) {
-            ITeleBTC(teleBTC).mint(address(this), lockerFee);
-            if (rewardDistributor == address(0)) {
-                // Send reward directly to locker
-                ITeleBTC(teleBTC).transfer(_lockerTargetAddress, lockerFee);
-            } else {
-                // Call reward distributor to distribute reward
-                ITeleBTC(teleBTC).approve(rewardDistributor, lockerFee);
-                Address.functionCall(
-                    rewardDistributor,
-                    abi.encodeWithSignature(
-                        "depositReward(address,uint256)",
-                        _lockerTargetAddress,
-                        lockerFee
-                    )
-                );
-            }
-        }
+        // Mint teleBTC
+        ITeleBTC(teleBTC).mint(address(this), _amount);
 
-        // Mints tokens for receiver
-        ITeleBTC(teleBTC).mint(_receiver, _amount - lockerFee);
+        // Send locker fee
+        uint256 lockerFee = (_amount * lockerPercentageFee) / MAX_LOCKER_FEE;
+        _sendLockerFee(_lockerTargetAddress, lockerFee);
+
+        // Send teleBTC to receiver
+        ITeleBTC(teleBTC).transfer(_receiver, _amount - lockerFee);
 
         emit MintByLocker(
             _lockerTargetAddress,
@@ -1073,8 +1067,7 @@ contract LockersManagerLogic is
         // Burns teleBTC and sends rest of it to locker
         if (!ITeleBTC(teleBTC).burn(remainedAmount)) revert BurnFailed();
 
-        if (!ITeleBTC(teleBTC).transfer(_lockerTargetAddress, lockerFee))
-            revert TransferFailed();
+        _sendLockerFee(_lockerTargetAddress, lockerFee);
 
         emit BurnByLocker(
             _lockerTargetAddress,
@@ -1085,8 +1078,6 @@ contract LockersManagerLogic is
 
         return remainedAmount;
     }
-
-    // *************** Public functions ***************
 
     function renounceOwnership() public virtual override onlyOwner {}
 
@@ -1136,5 +1127,25 @@ contract LockersManagerLogic is
                 _collateralDecimal,
                 libParams
             );
+    }
+
+    function _sendLockerFee(address _locker, uint _lockerFee) internal {
+        if (_lockerFee > 0) {
+            if (rewardDistributor == address(0)) {
+                // Send reward directly to locker
+                ITeleBTC(teleBTC).transfer(_locker, _lockerFee);
+            } else {
+                // Call reward distributor to distribute reward
+                ITeleBTC(teleBTC).approve(rewardDistributor, _lockerFee);
+                Address.functionCall(
+                    rewardDistributor,
+                    abi.encodeWithSignature(
+                        "depositReward(address,uint256)",
+                        _locker,
+                        _lockerFee
+                    )
+                );
+            }
+        }
     }
 }

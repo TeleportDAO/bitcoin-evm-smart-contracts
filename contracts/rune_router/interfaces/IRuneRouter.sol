@@ -207,6 +207,7 @@ interface IRuneRouter {
     function totalRuneUnwrapRequests() external view returns (uint);
 
     // State-changing functions
+    function setRewardDistributor(address _rewardDistributor) external;
 
     function setStartingBlockNumber(uint _startingBlockNumber) external;
 

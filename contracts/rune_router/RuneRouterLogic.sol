@@ -76,6 +76,14 @@ contract RuneRouterLogic is
         return runeUnwrapRequests.length;
     }
 
+    /// @notice Setter for reward distributor
+    /// @dev This contract distributes locker fee between locker and stakers
+    function setRewardDistributor(
+        address _rewardDistributor
+    ) external override onlyOwner {
+        rewardDistributor = _rewardDistributor;
+    }
+
     /// @notice Setter for locker locking script
     function setLockerLockingScript(
         bytes memory _lockerLockingScript,
@@ -329,23 +337,7 @@ contract RuneRouterLogic is
         // Send protocol, locker and third party fee
         IRune(wrappedRune).transfer(treasury, fee.protocolFee);
 
-        if (fee.lockerFee > 0) {
-            if (rewardDistributor == address(0)) {
-                // Send reward directly to locker
-                IRune(wrappedRune).transfer(locker, fee.lockerFee);
-            } else {
-                // Call reward distributor to distribute reward
-                IRune(wrappedRune).approve(rewardDistributor, fee.lockerFee);
-                Address.functionCall(
-                    rewardDistributor,
-                    abi.encodeWithSignature(
-                        "depositReward(address,uint256)",
-                        locker,
-                        fee.lockerFee
-                    )
-                );
-            }
-        }
+        _sendLockerFee(locker, fee.lockerFee, wrappedRune);
 
         if (_thirdPartyAddress != address(0)) {
             IRune(wrappedRune).transfer(_thirdPartyAddress, fee.thirdPartyFee);
@@ -572,6 +564,31 @@ contract RuneRouterLogic is
         }
     }
 
+    /// @notice Send locker fee by calling reward distributor
+    function _sendLockerFee(
+        address _locker,
+        uint _lockerFee,
+        address _wrappedRune
+    ) internal {
+        if (_lockerFee > 0) {
+            if (rewardDistributor == address(0)) {
+                // Send reward directly to locker
+                IRune(_wrappedRune).transfer(_locker, _lockerFee);
+            } else {
+                // Call reward distributor to distribute reward
+                IRune(_wrappedRune).approve(rewardDistributor, _lockerFee);
+                Address.functionCall(
+                    rewardDistributor,
+                    abi.encodeWithSignature(
+                        "depositReward(address,uint256)",
+                        _locker,
+                        _lockerFee
+                    )
+                );
+            }
+        }
+    }
+
     /// @notice Burns wrapped Rune and record the request
     function _unwrapRune(
         uint _thirdPartyId,
@@ -605,7 +622,9 @@ contract RuneRouterLogic is
 
         // Send protocol, locker and third party fee
         IRune(_token).transfer(treasury, _fee.protocolFee);
-        IRune(_token).transfer(locker, _fee.lockerFee);
+
+        _sendLockerFee(locker, _fee.lockerFee, _token);
+
         if (_thirdPartyAddress != address(0)) {
             IRune(_token).transfer(_thirdPartyAddress, _fee.thirdPartyFee);
         }

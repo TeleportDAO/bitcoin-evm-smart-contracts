@@ -565,7 +565,7 @@ contract BurnRouterLogic is
             uint256 remainingAmount,
             uint256 protocolFee,
             uint256 thirdPartyFee
-        ) = _getFees(_amount, thirdParty);
+        ) = _getFees(_amount, _lockerLockingScript, thirdParty);
 
         // Burns remained teleBTC
         IWETH(teleBTC).approve(lockers, remainingAmount);
@@ -816,6 +816,7 @@ contract BurnRouterLogic is
     /// @return _thirdPartyFee fee of third party
     function _getFees(
         uint256 _amount,
+        bytes memory _lockerLockingScript,
         uint256 _thirdParty
     )
         private
@@ -856,8 +857,11 @@ contract BurnRouterLogic is
         }
 
         if (bitcoinFee > 0) {
+            // This compensates locker for the network fee
+            address _lockerTargetAddress = ILockersManager(lockers)
+                .getLockerTargetAddress(_lockerLockingScript);
             require(
-                IWETH(teleBTC).transfer(lockers, bitcoinFee),
+                IWETH(teleBTC).transfer(_lockerTargetAddress, bitcoinFee),
                 "BurnRouterLogic: network fee transfer failed"
             );
         }

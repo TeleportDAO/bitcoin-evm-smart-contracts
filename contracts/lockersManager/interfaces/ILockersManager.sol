@@ -312,6 +312,8 @@ interface ILockersManager {
         uint256 _amount
     ) external returns (uint256);
 
+    function setRewardDistributor(address _rewardDistributor) external;
+
     function setTST(address _TST) external;
 
     function setLockerPercentageFee(uint256 _lockerPercentageFee) external;
