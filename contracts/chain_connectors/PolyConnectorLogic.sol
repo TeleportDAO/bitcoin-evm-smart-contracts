@@ -144,6 +144,41 @@ contract PolyConnectorLogic is
         );
     }
 
+    /// @notice Send back tokens to the source chain by owner
+    /// @dev Owner can only set the relayer fee percentage
+    function withdrawFundsToSourceChainByOwner(
+        address _user,
+        uint256 _chainId,
+        uint256 _uniqueCounter,
+        address _token,
+        int64 _relayerFeePercentage
+    ) external nonReentrant onlyOwner {
+
+        uint256 _amount = newFailedReqs[_user][_chainId][_uniqueCounter][_token];
+        // Update witholded amount
+        delete newFailedReqs[_user][_chainId][_uniqueCounter][_token];
+
+        require(_amount > 0, "PolygonConnectorLogic: already withdrawn");
+
+        // Send token back to the user
+        _sendTokenUsingAcross(
+            _user,
+            _chainId,
+            _token,
+            _amount,
+            _relayerFeePercentage
+        );
+
+        emit WithdrawnFundsToSourceChain(
+            _uniqueCounter,
+            _chainId,
+            _token,
+            _amount,
+            _relayerFeePercentage,
+            _user
+        );
+    }
+
     /// @notice Retry to swap and unwrap tokens
     /// @dev User signs a message for retrying its request
     /// @param _message The signed message

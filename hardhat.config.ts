@@ -64,7 +64,7 @@ const config: HardhatUserConfig = {
 			accounts: [process.env.PRIVATE_KEY ?? ""]
 		},
 		polygon: {
-			url: "https://1rpc.io/matic",
+			url: "https://rpc-mainnet.matic.quiknode.pro",
 			chainId: 137,
 			accounts: [process.env.PRIVATE_KEY ?? ""]
 		},
