@@ -245,6 +245,11 @@ interface IRuneRouter {
         uint _thirdPartyFee
     ) external;
 
+    function setVirtualLocker(
+        address _wrappedRune,
+        address _virtualLocker
+    ) external;
+
     function addRune(
         string memory _name,
         string memory _symbol,

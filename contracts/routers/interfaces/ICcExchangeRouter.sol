@@ -151,33 +151,20 @@ interface ICcExchangeRouter {
     /// @param txId Bitcoin request id
     /// @param token that used for filling
     /// @param amount that sent for filling
-    event NewFill(
+    event RequestFilled(
         address filler,
-        bytes32 txId, 
-        address token,
-        uint amount
-    );
-
-    /// @notice Emits when a request is filled for the first time
-    /// @param txId Bitcoin request id
-    /// @param time Filling starting time 
-    event FillStarted(
         bytes32 txId,
-        uint time
+        address recipient, 
+        address token,
+        uint amount,
+        uint destinationChainId,
+        uint acrossRelayerFee
     );
 
-    /// @notice Emits when unused tokens withdrawn
-    /// @param amount of unused tokens
-    /// @param token that filler sent
-    /// @param filler Address of filler
-    /// @param fillIdx Index of filling
-    /// @param txId that filler filled
-    event FillTokensReturned(
-        uint amount,
-        address token,
+    event FillerRefunded(
         address filler,
-        uint fillIdx,
-        bytes32 txId
+        bytes32 txId,
+        uint amount
     );
 
     /// @notice Emits when filler withdraws teleBTC
@@ -189,7 +176,7 @@ interface ICcExchangeRouter {
     /// @param txId that filler filled
     /// @param reqMintedTeleBtc Total teleBTC minted by txId
     /// @param sentTeleBtc Share of this filler from total minted teleBTC
-    event FillTeleBtcSent(
+    event FillerTeleBtcSent(
         uint amount,
         uint remainingAmount,
         address token,

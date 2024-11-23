@@ -57,7 +57,6 @@ contract CcExchangeRouterLogic is
         ReentrancyGuardUpgradeable.__ReentrancyGuard_init();
 
         chainId = _chainId;
-        // isChainSupported[chainId] = true;
         _setStartingBlockNumber(_startingBlockNumber);
         _setProtocolPercentageFee(_protocolPercentageFee);
         _setRelay(_relay);
@@ -120,14 +119,6 @@ contract CcExchangeRouterLogic is
     function setTreasury(address _treasury) external override onlyOwner {
         _setTreasury(_treasury);
     }
-
-    // /// @notice Setter for filler withdraw interval
-    // /// @dev Assuming that filling is started at X,
-    // ///      fillers cannot withdraw their funds before x + _fillerWithdrawInterval
-    // ///      (unless that filling is completed)
-    // function setFillerWithdrawInterval(uint _fillerWithdrawInterval) external override onlyOwner {
-    //     _setFillerWithdrawInterval(_fillerWithdrawInterval);
-    // }
 
     /// @notice Setter for across
     /// @dev Across is used to send exchanged tokens to other chains
@@ -288,37 +279,47 @@ contract CcExchangeRouterLogic is
         // Find remained amount after reducing fees
         _mintAndReduceFees(_lockerLockingScript, txId);
 
-        // if (
-        //     request.speed == 1 &&
-        //     _canFill(
-        //         txId,
-        //         request.path[request.path.length - 1], // output token
-        //         request.outputAmount
-        //     )
-        // ) {
-        //     // Fills exchange request
-        //     _fillCcExchange(
-        //         _lockerLockingScript,
-        //         txId,
-        //         request
-        //     );
+        if (request.speed == 1) {
+            // Request that can be filled
+            address filler = fillerAddress[txId][request.recipientAddress][
+                request.path[request.path.length - 1]
+            ][request.outputAmount][destinationChainId];
 
-        // } else {
+            if (filler != address(0)) {
+                // Send TeleBTC to filler who filled the request
+                _sendTeleBtcToFiller(
+                    filler,
+                    txId,
+                    _lockerLockingScript,
+                    destinationChainId
+                );
+                return true;
+            } else {
+                // Find new output amount
+                ccExchangeRequests[txId].outputAmount =
+                    (ccExchangeRequests[txId].outputAmount *
+                        (MAX_PROTOCOL_FEE - REGULAR_SLIPPAGE)) /
+                    MAX_PROTOCOL_FEE;
+                // Then treat it as a normal request (speed = 0)
+            }
+        }
+
         if (destinationChainId == chainId) {
+            // Requests that belongs to the current chain
             require(
                 extendedCcExchangeRequests[txId].bridgeFee == 0,
                 "ExchangeRouter: invalid brdige fee"
             );
 
-            // Requests that belongs to the current chain
             // Normal exchange request for a request which has not been filled
             _wrapAndSwap(_exchangeConnector, _lockerLockingScript, txId, _path);
         } else {
+            // Requests that belongs to the other chain
             require(
                 isChainSupported[destinationChainId],
                 "ExchangeRouter: invalid chain id"
             );
-            // Requests that belongs to the other chain
+
             // Exchange and send to other chain for a request which has not been filled
             _wrapAndSwapToOtherChain(
                 _exchangeConnector,
@@ -329,214 +330,113 @@ contract CcExchangeRouterLogic is
                 destinationChainId
             );
         }
-        // }
 
         return true;
     }
 
-    // /// @notice Filler fills an upcoming exchange request
-    // /// @param _txId Bitcoin request that filler wants to fill
-    // /// @param _token Address of exchange token in the request
-    // /// @param _amount Requested exchanging amount
-    // function fillTx(
-    //     bytes32 _txId,
-    //     address _recipient,
-    //     address _token,
-    //     uint _amount,
-    //     uint _requestAmount
-    // ) external override payable nonReentrant {
-    //     require (_amount > 0,  "ExchangeRouter: zero amount");
-    //     require (
-    //         fillersData[_txId][_msgSender()].amount == 0,
-    //         "ExchangeRouter: already filled"
-    //     );
+    function _sendTeleBtcToFiller(
+        address _filler,
+        bytes32 _txId,
+        bytes memory _lockerLockingScript,
+        uint256 _destinationChainId
+    ) private {
+        ccExchangeRequest memory request = ccExchangeRequests[_txId];
+        extendedCcExchangeRequest
+            memory extendedRequest = extendedCcExchangeRequests[_txId];
 
-    //     PrefixFillSum storage _prefixFillSum = prefixFillSums[_txId][_token];
+        // Send TeleBTC to filler
+        ITeleBTC(teleBTC).transfer(
+            _filler,
+            extendedRequest.remainedInputAmount
+        );
 
-    //     if (_prefixFillSum.currentIndex == 0) {
-    //         // ^ This is the first filling
-    //         _prefixFillSum.prefixSum.push(0);
-    //         _prefixFillSum.currentIndex = 1;
-    //     }
+        uint256[5] memory fees = [
+            request.fee,
+            extendedRequest.lockerFee,
+            extendedRequest.protocolFee,
+            extendedRequest.thirdPartyFee,
+            extendedRequest.bridgeFee
+        ];
 
-    //     // Stores the filling info
-    //     uint index = _prefixFillSum.currentIndex;
+        emit NewWrapAndSwap(
+            ILockersManager(lockers).getLockerTargetAddress(
+                _lockerLockingScript
+            ),
+            request.recipientAddress,
+            [teleBTC, request.path[request.path.length - 1]],
+            [extendedRequest.remainedInputAmount, request.outputAmount],
+            1,
+            _msgSender(),
+            _txId,
+            request.appId,
+            extendedRequest.thirdParty,
+            fees,
+            _destinationChainId
+        );
 
-    //     if (_requestAmount > _prefixFillSum.prefixSum[index]) {
-    //         uint fillAmount = _requestAmount - _prefixFillSum.prefixSum[index];
+        emit FillerRefunded(
+            _filler,
+            _txId,
+            extendedRequest.remainedInputAmount
+        );
+    }
 
-    //         if (_token == NATIVE_TOKEN) {
-    //             require(_msgValue() >= fillAmount, "ExchangeRouter: incorrect amount");
-    //             (bool sentToRecipient, bytes memory data1) = _recipient.call{value: fillAmount}("");
-    //             (bool sentToFiller, bytes memory data2) = _msgSender().call{value: fillAmount}("");
-    //             require(
-    //                 sentToRecipient == true && sentToFiller == true,
-    //                 "ExchangeRouter: failed to transfer native token"
-    //             );
-    //         } else {
-    //             require(
-    //                 IERC20(_token).transferFrom(_msgSender(), _recipient, fillAmount),
-    //                 "ExchangeRouter: no allowance"
-    //             );
-    //         }
+    /// @notice Filler fills an upcoming exchange request
+    /// @param _txId Bitcoin request that filler wants to fill
+    /// @param _token Address of exchange token in the request
+    /// @param _amount Requested exchanging amount
+    function fillTx(
+        bytes32 _txId,
+        address _recipient,
+        address _token,
+        uint _amount,
+        uint _destinationChainId,
+        uint _acrossRelayerFee
+    ) external payable nonReentrant {
+        require(
+            fillerAddress[_txId][_recipient][_token][_amount][
+                _destinationChainId
+            ] == address(0),
+            "ExchangeRouter: already filled"
+        );
 
-    //         fillersData[_txId][_msgSender()] = FillerData(_prefixFillSum.currentIndex, _token, fillAmount);
+        if (_destinationChainId == chainId) {
+            // Requests that belongs to the current chain
+            if (_token == NATIVE_TOKEN) {
+                require(msg.value == _amount, "ExchangeRouter: wrong amount");
+                (bool sentToRecipient, ) = _recipient.call{value: _amount}("");
+                require(sentToRecipient, "ExchangeRouter: transfer failed");
+            } else {
+                require(
+                    IERC20(_token).transferFrom(
+                        _msgSender(),
+                        _recipient,
+                        _amount
+                    ),
+                    "ExchangeRouter: no allowance"
+                );
+            }
+        } else {
+            // Requests that belongs to the other chain
+            _sendTokenToOtherChain(
+                _destinationChainId,
+                _token,
+                _amount,
+                _recipient,
+                _acrossRelayerFee
+            );
+        }
 
-    //         // Updates the cumulative filling
-    //         _prefixFillSum.prefixSum.push(_prefixFillSum.prefixSum[index - 1] + fillAmount);
-    //         _prefixFillSum.currentIndex += 1;
-
-    //         if (fillsData[_txId].startingTime == 0) {
-    //             // ^ No one has filled before
-    //             fillsData[_txId].startingTime = block.timestamp;
-
-    //             emit FillStarted(
-    //                 _txId,
-    //                 block.timestamp
-    //             );
-    //         }
-
-    //         emit NewFill(
-    //             _msgSender(),
-    //             _txId,
-    //             _token,
-    //             fillAmount
-    //         );
-    //     }
-    // }
-
-    // TODO remove
-    // / @notice Fillers can withdraw their unused tokens
-    // / @param _txId Bitcoin request which filling belongs to
-    // / @return true if withdrawing was successful
-    // function returnUnusedFill(
-    //     bytes32 _txId
-    // ) external override nonReentrant returns (bool) {
-    //     FillData memory fillData = fillsData[_txId];
-
-    //     // To withdraw tokens, either request should have been processed or
-    //     // deadline for processing should has been passed
-    //     require (
-    //         ccExchangeRequests[_txId].inputAmount > 0 ||
-    //             fillData.startingTime + fillerWithdrawInterval < block.timestamp,
-    //         "ExchangeRouter: req not processed nor time not passed"
-    //     );
-
-    //     FillerData memory fillerData = fillersData[_txId][_msgSender()];
-
-    //     // To withdraw token, either token should be wrong or token should have not been used
-    //     if (fillData.reqToken != fillerData.token || fillData.lastUsedIdx < fillerData.index) {
-    //         if (fillerData.token == NATIVE_TOKEN) {
-    //             require(
-    //                 payable(_msgSender()).send(fillerData.amount),
-    //                 "ExchangeRouter: can't send Ether"
-    //             );
-    //         } else {
-    //             require(
-    //                 IERC20(fillerData.token).transfer(_msgSender(), fillerData.amount),
-    //                 "ExchangeRouter: can't transfer token"
-    //             );
-    //         }
-    //         fillersData[_txId][_msgSender()].amount = 0;
-
-    //         emit FillTokensReturned(
-    //             fillerData.amount,
-    //             fillerData.token,
-    //             _msgSender(),
-    //             fillerData.index,
-    //             _txId
-    //         );
-    //         return true;
-    //     }
-
-    //     // Last used filling may used partially, so filler can withdraw remaining amount
-    //     if (
-    //         fillData.lastUsedIdx == fillerData.index &&
-    //         fillsData[_txId].isWithdrawnLastFill == false
-    //     ) {
-    //         if (fillerData.token == NATIVE_TOKEN) {
-    //             require(
-    //                 payable(_msgSender()).send(fillData.remainingAmountOfLastFill),
-    //                 "ExchangeRouter: can't send Ether"
-    //             );
-    //         } else {
-    //             require(
-    //                 IERC20(fillerData.token).transfer(_msgSender(), fillData.remainingAmountOfLastFill),
-    //                 "ExchangeRouter: can't transfer token"
-    //             );
-    //         }
-    //         fillsData[_txId].isWithdrawnLastFill = true;
-
-    //         emit FillTokensReturned(
-    //             fillData.remainingAmountOfLastFill,
-    //             fillerData.token,
-    //             _msgSender(),
-    //             fillerData.index,
-    //             _txId
-    //         );
-    //         return true;
-    //     }
-
-    //     return false;
-    // }
-
-    // /// @notice Filler whose tokens has been used gets teleBTC
-    // /// @param _txId Bitcoin request which filling belongs to
-    // /// @return true if withdrawing was successful
-    // function getTeleBtcForFill(
-    //    bytes32 _txId
-    // ) external override nonReentrant returns (bool) {
-    //     FillData memory fillData = fillsData[_txId];
-    //     FillerData memory fillerData = fillersData[_txId][_msgSender()];
-
-    //     if (fillData.lastUsedIdx > fillerData.index) {
-    //         // ^ This filling has been fully used
-    //         uint amount = extendedCcExchangeRequests[_txId].remainedInputAmount
-    //             * fillerData.amount / ccExchangeRequests[_txId].outputAmount;
-    //         require(
-    //             ITeleBTC(teleBTC).transfer(_msgSender(), amount),
-    //             "ExchangeRouter: can't transfer TeleBTC"
-    //         );
-    //         fillersData[_txId][_msgSender()].amount = 0;
-
-    //         emit FillTeleBtcSent(
-    //             fillerData.amount,
-    //             0,
-    //             fillerData.token,
-    //             _msgSender(),
-    //             fillerData.index,
-    //             _txId,
-    //             extendedCcExchangeRequests[_txId].remainedInputAmount,
-    //             amount
-    //         );
-    //         return true;
-    //     }
-
-    //     // We treat last used filling separately since part of it may only have been used
-    //     if (fillData.lastUsedIdx == fillerData.index) {
-    //         uint amount = (fillerData.amount - fillData.remainingAmountOfLastFill)
-    //             * extendedCcExchangeRequests[_txId].remainedInputAmount / ccExchangeRequests[_txId].outputAmount;
-    //         require(
-    //             ITeleBTC(teleBTC).transfer(_msgSender(), amount),
-    //             "ExchangeRouter: can't transfer TeleBTC"
-    //         );
-    //         fillersData[_txId][_msgSender()].amount = 0;
-
-    //         emit FillTeleBtcSent(
-    //             fillerData.amount,
-    //             fillData.remainingAmountOfLastFill,
-    //             fillerData.token,
-    //             _msgSender(),
-    //             fillerData.index,
-    //             _txId,
-    //             extendedCcExchangeRequests[_txId].remainedInputAmount,
-    //             amount
-    //         );
-    //         return true;
-    //     }
-
-    //     return false;
-    // }
+        emit RequestFilled(
+            _msgSender(),
+            _txId,
+            _recipient,
+            _token,
+            _amount,
+            _destinationChainId,
+            _acrossRelayerFee
+        );
+    }
 
     /// @notice Request BTC for failed exchange request
     /// @dev Users can get their BTC back if the request execution failed
@@ -949,101 +849,6 @@ contract CcExchangeRouterLogic is
         }
     }
 
-    // /// @notice Checks that if request can be filled
-    // /// @dev Request can be filled if
-    // ///      1. Filling deadline has not been passed
-    // ///      2. At least one filler exists
-    // ///      3. Filled amount is greater than or equal of the requested amount
-    // function _canFill(
-    //     bytes32 _txId,
-    //     address _token,
-    //     uint256 _amount
-    // ) private view returns (bool) {
-    //     PrefixFillSum memory _prefixFillSum = prefixFillSums[_txId][_token];
-
-    //     if (
-    //         block.timestamp <= fillsData[_txId].startingTime + fillerWithdrawInterval &&
-    //         _prefixFillSum.currentIndex > 0 &&
-    //         _prefixFillSum.prefixSum[_prefixFillSum.currentIndex - 1] >= _amount
-    //     ) {
-    //         return true;
-    //     } else {
-    //         return false;
-    //     }
-    // }
-
-    /// @notice Executes the exchange request with filler
-    // function _fillCcExchange(
-    //     bytes memory _lockerLockingScript,
-    //     bytes32 _txId,
-    //     ccExchangeRequest memory _request
-    // ) private {
-    //     address outputToken = _request.path[_request.path.length - 1];
-
-    //     FillData memory _txFillData;
-    //     _txFillData.reqToken = outputToken;
-
-    //     PrefixFillSum memory _prefixFillSum = prefixFillSums[_txId][outputToken];
-    //     _txFillData.lastUsedIdx = _findlastUsedIdxOfFill(_prefixFillSum, _request.outputAmount);
-    //     _txFillData.remainingAmountOfLastFill = _prefixFillSum.prefixSum[_txFillData.lastUsedIdx]
-    //         - _request.outputAmount;
-
-    //     // Saves the filling data
-    //     fillsData[_txId] = _txFillData;
-
-    //     uint _chainId = extendedCcExchangeRequests[_txId].chainId;
-    //     if (_chainId == chainId) {
-    //         if (outputToken == NATIVE_TOKEN) {
-    //             Address.sendValue(
-    //                 payable(_request.recipientAddress),
-    //                 _request.outputAmount
-    //             );
-    //         } else {
-    //             IERC20(outputToken).transfer(
-    //                 _request.recipientAddress,
-    //                 _request.outputAmount
-    //             );
-    //         }
-    //     } else {
-    //         _sendTokenToOtherChain(
-    //             extendedCcExchangeRequests[_txId].chainId,
-    //             _request.path[_request.path.length - 1],
-    //             _request.outputAmount,
-    //             _request.recipientAddress,
-    //             extendedCcExchangeRequests[_txId].bridgeFee
-    //         );
-    //     }
-
-    //     emit CCExchange(
-    //         ILockersManager(lockers).getLockerTargetAddress(_lockerLockingScript),
-    //         _request.recipientAddress,
-    //         [teleBTC, outputToken], // [input token, output token]
-    //         [extendedCcExchangeRequests[_txId].remainedInputAmount, _request.outputAmount], // [input amount, output amount]
-    //         _request.speed,
-    //         _msgSender(), // Teleporter address
-    //         _request.fee,
-    //         _txId,
-    //         _request.appId
-    //     );
-    // }
-
-    // function _findlastUsedIdxOfFill(
-    //     PrefixFillSum memory _prefixFillSum,
-    //     uint256 _amount
-    // ) private pure returns(uint)  {
-    //     uint[] memory sumArray = _prefixFillSum.prefixSum;
-    //     int l = -1;
-    //     int r = int(_prefixFillSum.currentIndex);
-    //     while (r - l > 1) {
-    //         int mid = (l + r) >> 1;
-    //         if (sumArray[uint(mid)] >= _amount)
-    //             r = mid;
-    //         else
-    //             l = mid;
-    //     }
-    //     return uint(r);
-    // }
-
     /// @notice Mints teleBTC by calling lockers contract
     /// @param _lockerLockingScript Locker's locking script
     /// @param _txId The transaction ID of the request
@@ -1098,12 +903,6 @@ contract CcExchangeRouterLogic is
             networkFee -
             extendedCcExchangeRequests[_txId].thirdPartyFee;
     }
-
-    // /// @notice Internal setter for filler withdraw interval
-    // function _setFillerWithdrawInterval(uint _fillerWithdrawInterval) private {
-    //     emit NewFillerWithdrawInterval(fillerWithdrawInterval, _fillerWithdrawInterval);
-    //     fillerWithdrawInterval = _fillerWithdrawInterval;
-    // }
 
     /// @notice Internal setter for relay contract address
     function _setRelay(address _relay) private nonZeroAddress(_relay) {

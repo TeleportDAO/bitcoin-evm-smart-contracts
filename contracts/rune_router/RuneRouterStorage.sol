@@ -30,4 +30,10 @@ abstract contract RuneRouterStorage is IRuneRouter {
     uint public override unwrapFee; // This fee (which is in native token) covers cost of sending RUNE tokens to the user
     address public wrappedNativeToken;
     address public rewardDistributor;
+
+    // New var
+    mapping(address => address) public virtualLocker;
+    // ^^ [wrappedRune address] => [virtualLockerAddress]
+    // This mapping introduced bcz of reward distribution contract
+    // In this contract each locker address can be used for one reward token
 }

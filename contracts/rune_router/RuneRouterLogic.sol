@@ -205,6 +205,13 @@ contract RuneRouterLogic is
         wrappedNativeToken = _wrappedNativeToken;
     }
 
+    function setVirtualLocker(
+        address _wrappedRune,
+        address _virtualLocker
+    ) external override onlyOwner {
+        virtualLocker[_wrappedRune] = _virtualLocker;
+    }
+
     /// @notice Deploy wrapped Rune token contract
     /// @dev We assign tokenId to a supported Rune
     /// @param _runeId Real rune id
@@ -337,7 +344,7 @@ contract RuneRouterLogic is
         // Send protocol, locker and third party fee
         IRune(wrappedRune).transfer(treasury, fee.protocolFee);
 
-        _sendLockerFee(locker, fee.lockerFee, wrappedRune);
+        _sendLockerFee(fee.lockerFee, wrappedRune);
 
         if (_thirdPartyAddress != address(0)) {
             IRune(wrappedRune).transfer(_thirdPartyAddress, fee.thirdPartyFee);
@@ -566,14 +573,13 @@ contract RuneRouterLogic is
 
     /// @notice Send locker fee by calling reward distributor
     function _sendLockerFee(
-        address _locker,
         uint _lockerFee,
         address _wrappedRune
     ) internal {
         if (_lockerFee > 0) {
             if (rewardDistributor == address(0)) {
                 // Send reward directly to locker
-                IRune(_wrappedRune).transfer(_locker, _lockerFee);
+                IRune(_wrappedRune).transfer(locker, _lockerFee);
             } else {
                 // Call reward distributor to distribute reward
                 IRune(_wrappedRune).approve(rewardDistributor, _lockerFee);
@@ -581,7 +587,7 @@ contract RuneRouterLogic is
                     rewardDistributor,
                     abi.encodeWithSignature(
                         "depositReward(address,uint256)",
-                        _locker,
+                        virtualLocker[_wrappedRune],
                         _lockerFee
                     )
                 );
@@ -623,7 +629,7 @@ contract RuneRouterLogic is
         // Send protocol, locker and third party fee
         IRune(_token).transfer(treasury, _fee.protocolFee);
 
-        _sendLockerFee(locker, _fee.lockerFee, _token);
+        _sendLockerFee(_fee.lockerFee, _token);
 
         if (_thirdPartyAddress != address(0)) {
             IRune(_token).transfer(_thirdPartyAddress, _fee.thirdPartyFee);

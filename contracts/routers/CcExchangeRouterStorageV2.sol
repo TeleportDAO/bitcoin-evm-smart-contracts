@@ -5,41 +5,44 @@ import "./interfaces/ICcExchangeRouter.sol";
 
 abstract contract CcExchangeRouterStorageV2 is ICcExchangeRouter {
     // Constants
-    uint constant MAX_BRIDGE_FEE = 10**18;
-
-    // New variables (filler)
-
+    uint constant MAX_BRIDGE_FEE = 10 ** 18;
     address constant NATIVE_TOKEN = address(1);
 
-    // note: should be set after deplyment
-    uint public fillerWithdrawInterval;
-
-    mapping(bytes32 => mapping(address => FillerData)) public fillersData;
-    // ^ [txId][filler] to FillerData
-    mapping(bytes32 => mapping(address => PrefixFillSum)) public prefixFillSums;
-    // ^ [txId][token] to PrefixFillSum
-    mapping(bytes32 => FillData) public fillsData;
+    // Removed variables
+    uint one;
+    mapping(bytes32 => mapping(address => FillerData)) two;
+    mapping(bytes32 => mapping(address => PrefixFillSum)) three;
+    mapping(bytes32 => FillData) four;
 
     // New variables (Ethereum support)
-    
-    mapping (uint => mapping (address => bool)) public override isTokenSupported; 
+
+    mapping(uint => mapping(address => bool)) public override isTokenSupported;
     // ^ Mapping to store supported exchange tokens
-    mapping(uint => bool) public override isChainSupported; 
+    mapping(uint => bool) public override isChainSupported;
     // ^ Mapping to store supported chainIds
-    mapping(bytes32 => extendedCcExchangeRequest) public extendedCcExchangeRequests;
-     
+    mapping(bytes32 => extendedCcExchangeRequest)
+        public extendedCcExchangeRequests;
+
     address public override across;
     address public wrappedNativeToken;
     address public override burnRouter;
 
     mapping(uint => chainIdStruct) public chainIdMapping;
 
-    // third party 
-    // other applications can use our smart contracts as a third party, 
-    // an id will be assigned to them
-    // and they will receive a third party fee for each transaction that is sent by them
-    // this fee will be send to their third party address
+    // New variables (third party)
+
+    // Other applications can integrate with TeleSwap. 
+    // ID will be assigned to them
+    // They will receive a third party fee for each transaction that is sent by them
+    // This fee will be send to their third party address
 
     mapping(uint => uint) public thirdPartyFee;
     mapping(uint => address) public thirdPartyAddress;
+
+    // New variables (filler)
+
+    mapping(bytes32 => mapping(address => mapping(address => mapping(uint => mapping(uint => address)))))
+        public fillerAddress;
+    // ^ [txId][recipient][token][amount][chainId] to filler address
+    uint constant REGULAR_SLIPPAGE = 1500;
 }
