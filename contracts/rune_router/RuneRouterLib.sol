@@ -53,7 +53,6 @@ library RuneRouterLib {
 
     /// @notice Extract request info and store it
     function wrapHelper(
-        uint _chainId,
         bytes memory _vout,
         bytes32 _txId,
         mapping(bytes32 => RuneRouterStorage.runeWrapRequest)
@@ -105,7 +104,10 @@ library RuneRouterLib {
             TOTAL = 41 BYTE (WRAP)
             7) outputToken, 20 byte: token address
             8) outputAmount, 13 byte: max 10^30 (= 1T * 10^18)
-            TOTAL = 74 BYTE (WRAP & EXCHANGE)
+            9) speed, 1 byte: 0 for normal, 1 for fast
+            9) bridgeFee, 3 byte: will be multiply by 10^11, 10^18 means 100%, so the minimum 
+            amount of fee percentage is 10^-5%
+            TOTAL = 78 BYTE (WRAP & SWAP)
         */
         request.isUsed = true;
         request.chainId = _parseChainId(requestData);
@@ -124,11 +126,12 @@ library RuneRouterLib {
             require(request.appId != 0, "RuneRouterLib: wrong app id");
             request.outputToken = _parseOutputToken(requestData);
             request.outputAmount = _parseOutputAmount(requestData);
+            request.speed = _parseSpeed(requestData);
+            request.bridgeFee = _parseBridgeFee(requestData);
         }
 
         // Some checks:
         require(request.inputAmount > 0, "RuneRouterLib: zero input");
-        require(request.chainId == _chainId, "RuneRouterLib: wrong chain");
 
         _wrappedRune = _supportedRunes[request.tokenId];
         require(_wrappedRune != address(0), "RuneRouterLib: not supported");
@@ -210,6 +213,51 @@ library RuneRouterLib {
         _runeUnwrapRequests.push(request);
     }
 
+    /// @notice Verifies the signature of _msgHash
+    /// @return _signer Address of message signer (if signature is valid)
+    function verifySig(
+        bytes memory message,
+        bytes32 r,
+        bytes32 s,
+        uint8 v
+    ) private pure returns (address) {
+        // Compute the message hash
+        bytes32 messageHash = keccak256(message);
+
+        // Prefix the message hash as per the Ethereum signing standard
+        bytes32 ethSignedMessageHash = keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
+        );
+
+        // Verify the message using ecrecover
+        address signer = ecrecover(ethSignedMessageHash, v, r, s);
+        require(signer != address(0), "RuneRouterLogic: Invalid sig");
+
+        return signer;
+    }
+
+    function processFailedRequest(
+        mapping(bytes32 => RuneRouterStorage.runeWrapRequest)
+            storage _runeWrapRequests,
+        bytes32 _txId,
+        bytes memory _message,
+        bytes32 _r,
+        bytes32 _s,
+        uint8 _v,
+        uint _chainId
+    ) external {
+        require(
+            _runeWrapRequests[_txId].chainId != _chainId && !_runeWrapRequests[_txId].isTransferredToOtherChain,
+            "RuneRouterLogic: already processed"
+        );
+        // Verify signer is the recipient
+        require(
+            verifySig(_message, _r, _s, _v) == _runeWrapRequests[_txId].recipientAddress,
+            "RuneRouterLogic: invalid signer"
+        );
+        _runeWrapRequests[_txId].isTransferredToOtherChain = true;
+    }
+
     /// @notice Return chain id of the request
     /// @param _requestData Data written in Bitcoin tx
     function _parseChainId(
@@ -289,6 +337,26 @@ library RuneRouterLib {
         bytes memory slicedBytes = _sliceBytes(_requestData, 61, 73);
         assembly {
             _parsedValue := mload(add(slicedBytes, 13))
+        }
+    }
+
+    /// @notice Return speed
+    function _parseSpeed(
+        bytes memory _requestData
+    ) internal pure returns (bool _parsedValue) {
+        bytes memory slicedBytes = _sliceBytes(_requestData, 74, 74);
+        assembly {
+            _parsedValue := mload(add(slicedBytes, 1))
+        }
+    }
+
+    /// @notice Return bridge fee
+    function _parseBridgeFee(
+        bytes memory _requestData
+    ) internal pure returns (uint24 _parsedValue) {
+        bytes memory slicedBytes = _sliceBytes(_requestData, 75, 77);
+        assembly {
+            _parsedValue := mload(add(slicedBytes, 3))
         }
     }
 

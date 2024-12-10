@@ -36,4 +36,6 @@ abstract contract RuneRouterStorage is IRuneRouter {
     // ^^ [wrappedRune address] => [virtualLockerAddress]
     // This mapping introduced bcz of reward distribution contract
     // In this contract each locker address can be used for one reward token
+    
+    address public across;
 }

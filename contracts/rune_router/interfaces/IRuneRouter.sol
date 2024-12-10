@@ -19,6 +19,9 @@ interface IRuneRouter {
         uint fee;
         uint outputAmount;
         address outputToken;
+        uint bridgeFee;
+        bool speed;
+        bool isTransferredToOtherChain;
     }
 
     /// @notice Structure for recording unwrap and swap&unwrap requests
@@ -45,14 +48,6 @@ interface IRuneRouter {
 
     // Events
 
-    /// @notice Emits when appId for an exchange connector is set
-    /// @param appId Assigned application id to exchange
-    /// @param exchangeConnector Address of exchange connector contract
-    event SetExchangeConnector(uint appId, address exchangeConnector);
-
-    /// @notice Emit when relay address updated
-    event NewRelay(address oldRelay, address newRelay);
-
     /// @notice Emit when locker address updated
     event NewLocker(address oldLocker, address newLocker);
 
@@ -70,9 +65,6 @@ interface IRuneRouter {
         uint oldLockerPercentageFee,
         uint newLockerPercentageFee
     );
-
-    /// @notice Emit when treasury address updated
-    event NewTreasury(address oldTreasury, address newTreasury);
 
     /// @notice Emit when new Rune added
     event NewRune(
@@ -119,7 +111,9 @@ interface IRuneRouter {
         address outputToken,
         fees fee,
         address thirdPartyAddress,
-        bytes32 txId
+        bytes32 txId,
+        bool speed,
+        uint chainId
     );
 
     /// @notice Emit when a wrap&swap request is processed but swap failed
@@ -131,7 +125,9 @@ interface IRuneRouter {
         address outputToken,
         fees fee,
         address thirdPartyAddress,
-        bytes32 txId
+        bytes32 txId,
+        bool speed,
+        uint chainId
     );
 
     /// @notice Emit when a unwrap request is processed
@@ -250,6 +246,8 @@ interface IRuneRouter {
         address _virtualLocker
     ) external;
 
+    function setAcross(address _across) external;
+
     function addRune(
         string memory _name,
         string memory _symbol,
@@ -292,4 +290,18 @@ interface IRuneRouter {
         uint _inputAmount,
         address[] memory _path
     ) external payable;
+
+    function retryFailedWrapAndSwap(
+        bytes memory _message,
+        bytes32 _r,
+        bytes32 _s,
+        uint8 _v
+    ) external;
+
+    function withdrawFailedWrapAndSwap(
+        bytes memory _message,
+        bytes32 _r,
+        bytes32 _s,
+        uint8 _v
+    ) external;
 }

@@ -8,17 +8,13 @@ import "../erc20/interfaces/IWETH.sol";
 import "../dex_connectors/interfaces/IDexConnector.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@across-protocol/contracts-v2/contracts/interfaces/SpokePoolInterface.sol";
 
 contract RuneRouterLogic is
     OwnableUpgradeable,
     ReentrancyGuardUpgradeable,
     RuneRouterStorage
 {
-    modifier nonZeroAddress(address _address) {
-        require(_address != address(0), "RuneRouterLogic: zero address");
-        _;
-    }
-
     /// @notice Initialize the contract
     /// @param _startingBlockNumber Requests included in a block older than _startingBlockNumber cannot be processed
     /// @param _protocolPercentageFee Percentage amount of protocol fee (min: %0.01)
@@ -99,7 +95,7 @@ contract RuneRouterLogic is
     ) public override onlyOwner {
         require(
             _startingBlockNumber > startingBlockNumber,
-            "RuneRouterLogic: low number"
+            "Router: low number"
         );
         startingBlockNumber = _startingBlockNumber;
     }
@@ -110,7 +106,7 @@ contract RuneRouterLogic is
     ) public override onlyOwner {
         require(
             MAX_PROTOCOL_FEE >= _protocolPercentageFee,
-            "RuneRouterLogic: out of range"
+            "Router: out of range"
         );
         emit NewProtocolPercentageFee(
             protocolPercentageFee,
@@ -125,7 +121,7 @@ contract RuneRouterLogic is
     ) public override onlyOwner {
         require(
             MAX_PROTOCOL_FEE >= _lockerPercentageFee,
-            "RuneRouterLogic: out of range"
+            "Router: out of range"
         );
         emit NewLockerPercentageFee(lockerPercentageFee, _lockerPercentageFee);
         lockerPercentageFee = _lockerPercentageFee;
@@ -134,15 +130,14 @@ contract RuneRouterLogic is
     /// @notice Setter for Bitcoin relay
     function setRelay(
         address _relay
-    ) public override nonZeroAddress(_relay) onlyOwner {
-        emit NewRelay(relay, _relay);
+    ) public override onlyOwner {
         relay = _relay;
     }
 
     /// @notice Setter for locker
     function setLocker(
         address _locker
-    ) public override nonZeroAddress(_locker) onlyOwner {
+    ) public override onlyOwner {
         emit NewLocker(locker, _locker);
         locker = _locker;
     }
@@ -150,7 +145,7 @@ contract RuneRouterLogic is
     /// @notice Setter for teleporter
     function setTeleporter(
         address _teleporter
-    ) public override nonZeroAddress(_teleporter) onlyOwner {
+    ) public override onlyOwner {
         emit NewTeleporter(teleporter, _teleporter);
         teleporter = _teleporter;
     }
@@ -158,8 +153,7 @@ contract RuneRouterLogic is
     /// @notice Setter for treasury
     function setTreasury(
         address _treasury
-    ) public override nonZeroAddress(_treasury) onlyOwner {
-        emit NewTreasury(treasury, _treasury);
+    ) public override onlyOwner {
         treasury = _treasury;
     }
 
@@ -169,7 +163,6 @@ contract RuneRouterLogic is
         uint _appId,
         address _exchangeConnector
     ) external override onlyOwner {
-        emit SetExchangeConnector(_appId, _exchangeConnector);
         exchangeConnector[_appId] = _exchangeConnector;
     }
 
@@ -201,15 +194,21 @@ contract RuneRouterLogic is
     /// @notice Setter for wrapped native token
     function setWrappedNativeToken(
         address _wrappedNativeToken
-    ) public override nonZeroAddress(_wrappedNativeToken) onlyOwner {
+    ) public override onlyOwner {
         wrappedNativeToken = _wrappedNativeToken;
     }
 
+    /// @notice Virtual locker is introduced bcz of reward distribution contract
     function setVirtualLocker(
         address _wrappedRune,
         address _virtualLocker
     ) external override onlyOwner {
         virtualLocker[_wrappedRune] = _virtualLocker;
+    }
+
+    /// @notice Setter for across contract
+    function setAcross(address _across) external override onlyOwner {
+        across = _across;
     }
 
     /// @notice Deploy wrapped Rune token contract
@@ -226,7 +225,7 @@ contract RuneRouterLogic is
         // Cannot assign to a used tokenId
         require(
             supportedRunes[_internalId] == address(0),
-            "RuneRouterLogic: used id"
+            "Router: used id"
         );
 
         // Deploy logic contract
@@ -263,7 +262,7 @@ contract RuneRouterLogic is
     /// @notice Remove support of a wrapped RUNE token
     function removeRune(uint _internalId) external override onlyOwner {
         address wrappedRune = supportedRunes[_internalId];
-        require(wrappedRune != address(0), "RuneRouterLogic: no token");
+        require(wrappedRune != address(0), "Router: no token");
         emit RuneRemoved(_internalId, wrappedRune);
         delete runeIds[wrappedRune];
         delete internalIds[wrappedRune];
@@ -300,7 +299,7 @@ contract RuneRouterLogic is
         uint _index,
         address[] memory _path
     ) external payable override nonReentrant {
-        require(_msgSender() == teleporter, "RuneRouterLogic: not teleporter");
+        require(_msgSender() == teleporter, "Router: not teleporter");
 
         // Find txId and check its inclusion
         bytes32 txId = RuneRouterLib.checkTx(
@@ -322,7 +321,6 @@ contract RuneRouterLogic is
             address _thirdPartyAddress,
             address wrappedRune
         ) = RuneRouterLib.wrapHelper(
-                chainId,
                 _vout,
                 txId,
                 runeWrapRequests,
@@ -374,18 +372,20 @@ contract RuneRouterLogic is
             require(
                 _path[0] == request.inputToken &&
                     _path[_path.length - 1] == request.outputToken,
-                "RuneRouterLogic: wrong path"
+                "Router: wrong path"
             );
 
+            // Swapped tokens are sent to this contract
             (bool result, uint[] memory amounts) = _swap(
                 request.appId,
-                request.recipientAddress,
+                address(this),
                 remainingAmount,
                 request.outputAmount,
                 _path
             );
 
             if (result) {
+                // Swap successful
                 emit NewRuneWrapAndSwap(
                     request.recipientAddress,
                     remainingAmount,
@@ -394,9 +394,29 @@ contract RuneRouterLogic is
                     request.outputToken,
                     fee,
                     _thirdPartyAddress,
-                    txId
+                    txId,
+                    request.speed,
+                    request.chainId
                 );
+                if (request.chainId == chainId) {
+                    // Transfer exchanged tokens to user
+                    IRune(request.outputToken).transfer(
+                        request.recipientAddress,
+                        amounts[amounts.length - 1]
+                    );
+                } else {
+                    runeWrapRequests[txId].isTransferredToOtherChain = true;
+                    // Transfer exchanged tokens to the destination chain
+                    _sendTokenToOtherChain(
+                        request.chainId,
+                        request.outputToken,
+                        amounts[amounts.length - 1],
+                        request.recipientAddress,
+                        request.bridgeFee
+                    );
+                }
             } else {
+                // Swap failed
                 emit FailedRuneWrapAndSwap(
                     request.recipientAddress,
                     remainingAmount,
@@ -405,14 +425,20 @@ contract RuneRouterLogic is
                     request.outputToken,
                     fee,
                     _thirdPartyAddress,
-                    txId
+                    txId,
+                    request.speed,
+                    request.chainId
                 );
-
-                // Transfer wrapped tokens to user
-                IRune(wrappedRune).transfer(
-                    request.recipientAddress,
-                    remainingAmount
-                );
+                if (request.chainId == chainId) {
+                    // Transfer wrapped tokens to user
+                    IRune(wrappedRune).transfer(
+                        request.recipientAddress,
+                        remainingAmount
+                    );
+                } else {
+                    // Update input amount to remaining amount
+                    runeWrapRequests[txId].inputAmount = remainingAmount;
+                }
             }
         }
     }
@@ -432,27 +458,27 @@ contract RuneRouterLogic is
         uint _appId,
         uint _inputAmount,
         address[] memory _path
-    ) external payable override nonReentrant {
+    ) public payable override nonReentrant {
         address token = supportedRunes[_internalId];
-        require(token != address(0), "RuneRouterLogic: not supported");
+        require(token != address(0), "Router: not supported");
 
         if (msg.value > unwrapFee) {
             // Input token is native token
             require(
                 msg.value == _inputAmount + unwrapFee,
-                "RuneRouterLogic: wrong value"
+                "Router: wrong value"
             );
 
             require(
                 wrappedNativeToken == _path[0],
-                "RuneRouterLogic: invalid path"
+                "Router: invalid path"
             );
 
             // Mint wrapped native token
             IWETH(wrappedNativeToken).deposit{value: _inputAmount}();
         } else {
             // Input token != native token
-            require(msg.value == unwrapFee, "RuneRouterLogic: wrong fee");
+            require(msg.value == unwrapFee, "Router: wrong fee");
         }
 
         if (_path.length != 0) {
@@ -475,14 +501,14 @@ contract RuneRouterLogic is
                 _amount,
                 _path
             );
-            require(result, "RuneRouterLogic: swap failed");
+            require(result, "Router: swap failed");
             _amount = amounts[amounts.length - 1]; // Rune amount that would be burnt
         } else {
             // This is a unwrap request
             // Transfer user's tokens to contract
             require(
                 IRune(token).transferFrom(_msgSender(), address(this), _amount),
-                "RuneRouterLogic: transfer failed"
+                "Router: transfer failed"
             );
         }
 
@@ -540,7 +566,7 @@ contract RuneRouterLogic is
         uint _index,
         uint[] memory _reqIndexes
     ) external payable override nonReentrant {
-        require(_msgSender() == locker, "RuneRouterLogic: not locker");
+        require(_msgSender() == locker, "Router: not locker");
 
         bytes32 txId = RuneRouterLib.checkTx(
             startingBlockNumber,
@@ -557,7 +583,7 @@ contract RuneRouterLogic is
         for (uint i = 0; i < _reqIndexes.length; i++) {
             require(
                 !runeUnwrapRequests[_reqIndexes[i]].isProcessed,
-                "RuneRouterLogic: already processed"
+                "Router: already processed"
             );
             runeUnwrapRequests[_reqIndexes[i]].isProcessed = true;
             emit UnwrapRuneProcessed(
@@ -571,11 +597,100 @@ contract RuneRouterLogic is
         }
     }
 
+    /// @notice Retry for failed exchange request
+    /// @dev Users can retry their failed exchange request if
+    /// their request destination is different from the current chain
+    /// @param _message ABI encode of (txId, outputAmount, acrossRelayerFee, exchangePath)
+    /// @param _r Signature r
+    /// @param _s Signature s
+    /// @param _v Signature v
+    function retryFailedWrapAndSwap(
+        bytes memory _message,
+        bytes32 _r,
+        bytes32 _s,
+        uint8 _v
+    ) external override nonReentrant {
+        (
+            bytes32 _txId,
+            uint256 _newOutputAmount,
+            uint256 _newBridgeFee,
+            address[] memory _path
+        ) = abi.decode(_message, (bytes32, uint256, uint256, address[]));
+
+        RuneRouterLib.processFailedRequest(
+            runeWrapRequests,
+            _txId,
+            _message,
+            _r,
+            _s,
+            _v,
+            chainId
+        );
+
+        runeWrapRequest memory request = runeWrapRequests[_txId];
+
+        // Exchange wrapped Rune for desired token
+        (bool result, uint256[] memory amounts) = _swap(
+            request.appId,
+            address(this),
+            request.inputAmount,
+            _newOutputAmount,
+            _path
+        );
+
+        require(result, "Router: swap failed");
+
+        // Send exchanged tokens to the destination chain
+        _sendTokenToOtherChain(
+            request.chainId,
+            _path[_path.length - 1],
+            amounts[amounts.length - 1],
+            request.recipientAddress,
+            _newBridgeFee
+        );
+    }
+
+    /// @notice Request withdraw for failed exchange request
+    /// @dev Users can get their Rune back if the request execution failed and 
+    ///      their request destination is different from the current chain
+    /// @param _message ABI encode of (txId, scriptType, userScript)
+    /// @param _r Signature r
+    /// @param _s Signature s
+    /// @param _v Signature v
+    function withdrawFailedWrapAndSwap(
+        bytes memory _message,
+        bytes32 _r,
+        bytes32 _s,
+        uint8 _v
+    ) external override nonReentrant {
+        (bytes32 _txId, uint8 _scriptType, bytes memory _userScript) = abi
+            .decode(_message, (bytes32, uint8, bytes));
+
+        RuneRouterLib.processFailedRequest(
+            runeWrapRequests,
+            _txId,
+            _message,
+            _r,
+            _s,
+            _v,
+            chainId
+        );
+
+        // Unwrap wrapped Rune
+        unwrapRune(
+            0,
+            internalIds[runeWrapRequests[_txId].inputToken],
+            runeWrapRequests[_txId].inputAmount,
+            _userScript,
+            ScriptTypes(_scriptType),
+            0,
+            0,
+            new address[](0)
+        );
+    }
+
     /// @notice Send locker fee by calling reward distributor
-    function _sendLockerFee(
-        uint _lockerFee,
-        address _wrappedRune
-    ) internal {
+    function _sendLockerFee(uint _lockerFee, address _wrappedRune) internal {
         if (_lockerFee > 0) {
             if (rewardDistributor == address(0)) {
                 // Send reward directly to locker
@@ -653,7 +768,7 @@ contract RuneRouterLogic is
         address _exchangeConnector = exchangeConnector[_appId];
         require(
             _exchangeConnector != address(0),
-            "RuneRouterLogic: invalid appId"
+            "Router: invalid appId"
         );
 
         IRune(_path[0]).approve(_exchangeConnector, _inputAmount);
@@ -670,5 +785,27 @@ contract RuneRouterLogic is
         } else {
             _result = false;
         }
+    }
+
+    /// @notice Send tokens to the destination using Across
+    function _sendTokenToOtherChain(
+        uint256 _chainId,
+        address _token,
+        uint256 _amount,
+        address _user,
+        uint256 _acrossRelayerFee
+    ) private {
+        IRune(_token).approve(across, _amount);
+
+        SpokePoolInterface(across).deposit(
+            _user,
+            _token,
+            _amount,
+            _chainId,
+            int64(uint64(_acrossRelayerFee)),
+            uint32(block.timestamp),
+            "0x", // Null data
+            115792089237316195423570985008687907853269984665640564039457584007913129639935
+        );
     }
 }
