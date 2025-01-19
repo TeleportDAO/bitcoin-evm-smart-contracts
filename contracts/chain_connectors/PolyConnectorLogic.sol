@@ -81,6 +81,9 @@ contract PolyConnectorLogic is
         address,
         bytes memory _message
     ) external override nonReentrant {
+        // To avoid gas limit issues
+        require(gasleft() >= 1800000, "PolygonConnectorLogic: low gas");
+
         // Check the msg origin
         require(msg.sender == across, "PolygonConnectorLogic: not across");
 
@@ -91,9 +94,7 @@ contract PolyConnectorLogic is
 
         if (_isEqualString(purpose, "swapAndUnwrap")) {
             _swapAndUnwrap(_amount, _message, _tokenSent);
-        }
-
-        if (_isEqualString(purpose, "swapAndUnwrapRune")) {
+        } else if (_isEqualString(purpose, "swapAndUnwrapRune")) {
             _swapAndUnwrapRune(_amount, _message, _tokenSent);
         }
     }
@@ -303,8 +304,9 @@ contract PolyConnectorLogic is
         address _token,
         int64 _relayerFeePercentage
     ) external nonReentrant onlyOwner {
-
-        uint256 _amount = newFailedReqs[_user][_chainId][_uniqueCounter][_token];
+        uint256 _amount = newFailedReqs[_user][_chainId][_uniqueCounter][
+            _token
+        ];
         // Update witholded amount
         delete newFailedReqs[_user][_chainId][_uniqueCounter][_token];
 
@@ -338,7 +340,10 @@ contract PolyConnectorLogic is
         address _tokenSent
     ) internal {
         exchangeForBtcArguments memory arguments = _decodeReq(_message);
-        require(arguments.path[0] == _tokenSent, "PolygonConnectorLogic: invalid path");
+        require(
+            arguments.path[0] == _tokenSent,
+            "PolygonConnectorLogic: invalid path"
+        );
 
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = _amount;
@@ -409,7 +414,10 @@ contract PolyConnectorLogic is
         address _tokenSent
     ) internal {
         exchangeForRuneArguments memory arguments = _decodeReqRune(_message);
-        require(arguments.path[0] == _tokenSent, "PolygonConnectorLogic: invalid path");
+        require(
+            arguments.path[0] == _tokenSent,
+            "PolygonConnectorLogic: invalid path"
+        );
 
         IERC20(_tokenSent).approve(runeRouterProxy, _amount);
 
@@ -512,16 +520,18 @@ contract PolyConnectorLogic is
         bytes memory _message
     ) private pure returns (exchangeForRuneArguments memory arguments) {
         (
-            , // purpose,
+            ,
+            // purpose,
             arguments.uniqueCounter,
             arguments.chainId,
             arguments.user,
             arguments.appId,
             arguments.outputAmount,
-            arguments.internalId, 
-            , // arguments.path,
-            , // arguments.userScript,
+            arguments.internalId, // arguments.path, // arguments.userScript,
             // arguments.thirdPartyId
+            ,
+            ,
+
         ) = abi.decode(
             _message,
             (
