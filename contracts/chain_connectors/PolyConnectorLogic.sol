@@ -99,6 +99,7 @@ contract PolyConnectorLogic is
     }
 
     /// @notice Send back tokens to the source chain
+    /// @dev This function is used for both failed BTC and Rune requests
     /// @param _message The signed message
     /// @param _v Signature v
     /// @param _r Signature r
@@ -141,41 +142,6 @@ contract PolyConnectorLogic is
             _amount,
             _relayerFeePercentage,
             user
-        );
-    }
-
-    /// @notice Send back tokens to the source chain by owner
-    /// @dev Owner can only set the relayer fee percentage
-    function withdrawFundsToSourceChainByOwner(
-        address _user,
-        uint256 _chainId,
-        uint256 _uniqueCounter,
-        address _token,
-        int64 _relayerFeePercentage
-    ) external nonReentrant onlyOwner {
-
-        uint256 _amount = newFailedReqs[_user][_chainId][_uniqueCounter][_token];
-        // Update witholded amount
-        delete newFailedReqs[_user][_chainId][_uniqueCounter][_token];
-
-        require(_amount > 0, "PolygonConnectorLogic: already withdrawn");
-
-        // Send token back to the user
-        _sendTokenUsingAcross(
-            _user,
-            _chainId,
-            _token,
-            _amount,
-            _relayerFeePercentage
-        );
-
-        emit WithdrawnFundsToSourceChain(
-            _uniqueCounter,
-            _chainId,
-            _token,
-            _amount,
-            _relayerFeePercentage,
-            _user
         );
     }
 
@@ -275,6 +241,7 @@ contract PolyConnectorLogic is
         bytes32 _r,
         bytes32 _s
     ) external override nonReentrant {
+        // TODO: No Deadline/Expiry Check
         // Find user address after verifying the signature
         address user = _verifySig(_message, _r, _s, _v);
 
@@ -289,8 +256,6 @@ contract PolyConnectorLogic is
         require(_amount > 0, "PolygonConnectorLogic: already retried");
 
         IERC20(arguments.path[0]).approve(runeRouterProxy, _amount);
-
-        // Get unwrap fee from contract
 
         IRuneRouter(runeRouterProxy).unwrapRune(
             arguments.thirdPartyId,
@@ -329,6 +294,41 @@ contract PolyConnectorLogic is
         else IERC20(_token).transfer(_to, _amount);
     }
 
+    /// @notice Send back tokens to the source chain by owner
+    /// @dev Owner can only set the relayer fee percentage
+    function withdrawFundsToSourceChainByOwner(
+        address _user,
+        uint256 _chainId,
+        uint256 _uniqueCounter,
+        address _token,
+        int64 _relayerFeePercentage
+    ) external nonReentrant onlyOwner {
+
+        uint256 _amount = newFailedReqs[_user][_chainId][_uniqueCounter][_token];
+        // Update witholded amount
+        delete newFailedReqs[_user][_chainId][_uniqueCounter][_token];
+
+        require(_amount > 0, "PolygonConnectorLogic: already withdrawn");
+
+        // Send token back to the user
+        _sendTokenUsingAcross(
+            _user,
+            _chainId,
+            _token,
+            _amount,
+            _relayerFeePercentage
+        );
+
+        emit WithdrawnFundsToSourceChain(
+            _uniqueCounter,
+            _chainId,
+            _token,
+            _amount,
+            _relayerFeePercentage,
+            _user
+        );
+    }
+
     receive() external payable {}
 
     /// @notice Helper for exchanging token for BTC
@@ -338,6 +338,7 @@ contract PolyConnectorLogic is
         address _tokenSent
     ) internal {
         exchangeForBtcArguments memory arguments = _decodeReq(_message);
+        require(arguments.path[0] == _tokenSent, "PolygonConnectorLogic: invalid path");
 
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = _amount;
@@ -408,12 +409,10 @@ contract PolyConnectorLogic is
         address _tokenSent
     ) internal {
         exchangeForRuneArguments memory arguments = _decodeReqRune(_message);
+        require(arguments.path[0] == _tokenSent, "PolygonConnectorLogic: invalid path");
 
         IERC20(_tokenSent).approve(runeRouterProxy, _amount);
 
-        // Get unwrap fee from contract
-        // We assume that contract owner has funded the contract with enough native token
-        // Owner get this fee from users in the source chain connector contract
         try
             IRuneRouter(runeRouterProxy).unwrapRune(
                 arguments.thirdPartyId,

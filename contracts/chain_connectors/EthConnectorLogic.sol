@@ -25,7 +25,6 @@ contract EthConnectorLogic is
     }
 
     function initialize(
-        address _targetChainTeleBTC,
         address _across,
         address _wrappedNativeToken,
         uint256 _targetChainId,
@@ -35,12 +34,11 @@ contract EthConnectorLogic is
         ReentrancyGuardUpgradeable.__ReentrancyGuard_init();
         PausableUpgradeable.__Pausable_init();
 
-        _setTargetChainTeleBTC(_targetChainTeleBTC);
         _setAcross(_across);
         _setWrappedNativeToken(_wrappedNativeToken);
         targetChainId = _targetChainId;
         currChainId = _currChainId;
-        uniqueCounter = 0;
+        uniqueCounter = 0; // This is a shared counter for all request types
     }
 
     receive() external payable {}
@@ -55,13 +53,6 @@ contract EthConnectorLogic is
         address _targetChainConnectorProxy
     ) external override onlyOwner {
         _setTargetChainConnectorProxy(_targetChainConnectorProxy);
-    }
-
-    /// @notice Setter for TargetChainTeleBTC
-    function setTargetChainTeleBTC(
-        address _targetChainTeleBTC
-    ) external override onlyOwner {
-        _setTargetChainTeleBTC(_targetChainTeleBTC);
     }
 
     /// @notice Setter for WrappedNativeToken
@@ -100,13 +91,8 @@ contract EthConnectorLogic is
         int64 _relayerFeePercentage,
         uint256 _thirdParty
     ) external payable override nonReentrant {
-        if (_token == ETH_ADDR) {
-            require(msg.value == _amounts[0], "EthConnectorLogic: wrong value");
-        } else {
-            require(msg.value == 0, "EthConnectorLogic: wrong fee");
-        }
+        _validateTransfer(_token, _amounts[0]);
 
-        // Send msg to Polygon
         bytes memory message = abi.encode(
             "swapAndUnwrap",
             uniqueCounter,
@@ -121,9 +107,6 @@ contract EthConnectorLogic is
         );
 
         emit MsgSent(uniqueCounter, message, _token, _amounts[0]);
-
-        uniqueCounter++;
-
         _sendMsgUsingAcross(
             _token,
             _amounts[0],
@@ -133,28 +116,18 @@ contract EthConnectorLogic is
     }
 
     /// @notice Request exchanging token for RUNE
-    /// @dev To find runeAmount, _relayerFeePercentage should be reduced from the inputTokenAmount
-    /// @param _token Address of input token (on the current chain)
     function swapAndUnwrapRune(
         address _token,
         uint256 _appId,
-        uint256[] calldata _amounts, // [inputTokenAmount, runeAmount]
+        uint256[] calldata _amounts,
         uint256 _internalId,
         address[] calldata _path,
         UserScript calldata _userScript,
         int64 _relayerFeePercentage,
         uint256 _thirdParty
     ) external payable override nonReentrant {
-        if (_token == ETH_ADDR) {
-            require(
-                msg.value == _amounts[0] + unwrapFee,
-                "EthConnectorLogic: wrong value"
-            );
-        } else {
-            require(msg.value == unwrapFee, "EthConnectorLogic: wrong fee");
-        }
+        _validateTransfer(_token, _amounts[0]);
 
-        // Send msg to Polygon
         bytes memory message = abi.encode(
             "swapAndUnwrapRune",
             uniqueCounter,
@@ -169,9 +142,6 @@ contract EthConnectorLogic is
         );
 
         emit MsgSentRune(uniqueCounter, message, _token, _amounts[0]);
-
-        uniqueCounter++;
-
         _sendMsgUsingAcross(
             _token,
             _amounts[0],
@@ -180,37 +150,14 @@ contract EthConnectorLogic is
         );
     }
 
-    // /// @notice Request exchanging token for RUNE
-    // /// @dev To find runeAmount, _relayerFeePercentage should be reduced from the inputTokenAmount
-    // /// @param _token Address of input token (on the current chain)
-    // function generalSwapAndUnwrap(
-    //     string calldata _swapType,
-    //     address _token,
-    //     uint _amount,
-    //     bytes calldata _message,
-    //     int64 _relayerFeePercentage
-    // ) external payable nonReentrant {
-
-    //     // Send msg to Polygon
-    //     bytes memory finalMessage = abi.encode(
-    //         _swapType,
-    //         uniqueCounter,
-    //         currChainId,
-    //         _msgSender(),
-    //         _message
-    //     );
-
-    //     // emit GeneralMsgSent(_token, _amount, finalMessage);
-
-    //     uniqueCounter++;
-
-    //     _sendMsgUsingAcross(
-    //         _token,
-    //         _amount,
-    //         finalMessage,
-    //         _relayerFeePercentage
-    //     );
-    // }
+    /// @notice Internal function to validate ETH/token transfer
+    function _validateTransfer(address _token, uint256 _amount) private view {
+        if (_token == ETH_ADDR) {
+            require(msg.value == _amount, "EthConnectorLogic: wrong value");
+        } else {
+            require(msg.value == 0, "EthConnectorLogic: wrong value");
+        }
+    }
 
     /// @notice Send tokens and message using Across bridge
     function _sendMsgUsingAcross(
@@ -219,6 +166,8 @@ contract EthConnectorLogic is
         bytes memory _message,
         int64 _relayerFeePercentage
     ) internal {
+        uniqueCounter++;
+
         if (_token == ETH_ADDR) {
             _token = wrappedNativeToken;
         } else {
@@ -263,13 +212,6 @@ contract EthConnectorLogic is
         );
 
         targetChainConnectorProxy = _targetChainConnectorProxy;
-    }
-
-    function _setTargetChainTeleBTC(
-        address _targetChainTeleBTC
-    ) private nonZeroAddress(_targetChainTeleBTC) {
-        emit TargetChainTeleBTCUpdated(targetChainTeleBTC, _targetChainTeleBTC);
-        targetChainTeleBTC = _targetChainTeleBTC;
     }
 
     function _setWrappedNativeToken(

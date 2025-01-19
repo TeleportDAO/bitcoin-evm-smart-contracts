@@ -40,8 +40,6 @@ interface IEthConnector {
         address newTargetChainConnector
     );
 
-    event TargetChainTeleBTCUpdated(address oldTeleBtc, address newTeleBtc);
-
     event WrappedNativeTokenUpdated(
         address oldWrappedNativeToken,
         address newWrappedNativeToken
@@ -52,8 +50,6 @@ interface IEthConnector {
     function setTargetChainConnectorProxy(
         address _targetChainConnector
     ) external;
-
-    function setTargetChainTeleBTC(address _targetChainTeleBTC) external;
 
     function setWrappedNativeToken(address _wrappedNativeToken) external;
 
