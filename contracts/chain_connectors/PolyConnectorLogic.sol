@@ -291,9 +291,8 @@ contract PolyConnectorLogic is
         IERC20(arguments.path[0]).approve(runeRouterProxy, _amount);
 
         // Get unwrap fee from contract
-        uint unwrapFee = IRuneRouter(runeRouterProxy).unwrapFee();
 
-        IRuneRouter(runeRouterProxy).unwrapRune{value: unwrapFee}(
+        IRuneRouter(runeRouterProxy).unwrapRune(
             arguments.thirdPartyId,
             arguments.internalId,
             arguments.outputAmount,
@@ -415,10 +414,8 @@ contract PolyConnectorLogic is
         // Get unwrap fee from contract
         // We assume that contract owner has funded the contract with enough native token
         // Owner get this fee from users in the source chain connector contract
-        uint unwrapFee = IRuneRouter(runeRouterProxy).unwrapFee();
-
         try
-            IRuneRouter(runeRouterProxy).unwrapRune{value: unwrapFee}(
+            IRuneRouter(runeRouterProxy).unwrapRune(
                 arguments.thirdPartyId,
                 arguments.internalId,
                 arguments.outputAmount,

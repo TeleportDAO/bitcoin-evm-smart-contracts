@@ -57,14 +57,14 @@ library RuneRouterLib {
         bytes32 _txId,
         mapping(bytes32 => RuneRouterStorage.runeWrapRequest)
             storage _runeWrapRequests,
-        mapping(uint => address) storage _supportedRunes,
-        mapping(uint => RuneRouterStorage.thirdParty) storage _thirdParties,
-        uint _protocolPercentageFee,
-        uint _lockerPercentageFee
+        mapping(uint256 => address) storage _supportedRunes,
+        mapping(uint256 => RuneRouterStorage.thirdParty) storage _thirdParties,
+        uint256 _protocolPercentageFee,
+        uint256 _lockerPercentageFee
     )
         external
         returns (
-            uint _remainingAmount,
+            uint256 _remainingAmount,
             RuneRouterStorage.fees memory _fee,
             address _thirdPartyAddress,
             address _wrappedRune
@@ -81,15 +81,15 @@ library RuneRouterLib {
         (
             ,
             // Value
-            bytes memory requestData
+            bytes memory requestData // OP_RETURN data
         ) = BitcoinHelper.parseValueAndDataHavingLockingScriptSmallPayload(
                 _vout,
-                "0x"
+                "0x" // since we only interested in OP_RETURN data, we don't need to pass locking script
             );
 
         // 41 for wrap, 74 for wrapAndSwap
         require(
-            requestData.length == 41 || requestData.length == 74,
+            requestData.length == 41 || requestData.length == 78,
             "RuneRouterLib: invalid len"
         );
 
@@ -117,9 +117,11 @@ library RuneRouterLib {
         request.recipientAddress = _parseRecipientAddress(requestData);
         request.thirdPartyId = _parseThirdPartyId(requestData);
 
+        // Find third party address
         _thirdPartyAddress = _thirdParties[request.thirdPartyId]
             .thirdPartyAddress;
 
+        // Check app id for wrap and wrapAndSwap
         if (requestData.length == 41) {
             require(request.appId == 0, "RuneRouterLib: wrong app id");
         } else {
@@ -130,13 +132,15 @@ library RuneRouterLib {
             request.bridgeFee = _parseBridgeFee(requestData);
         }
 
-        // Some checks:
+        // Input amount must be greater than 0
         require(request.inputAmount > 0, "RuneRouterLib: zero input");
 
+        // Token id must be supported
         _wrappedRune = _supportedRunes[request.tokenId];
         require(_wrappedRune != address(0), "RuneRouterLib: not supported");
         request.inputToken = _wrappedRune;
 
+        // Calculate fees
         uint inputAmount = request.inputAmount;
         _fee.protocolFee = (inputAmount * _protocolPercentageFee) / 10000;
         _fee.lockerFee = (inputAmount * _lockerPercentageFee) / 10000;
@@ -149,6 +153,7 @@ library RuneRouterLib {
             _fee.lockerFee -
             _fee.thirdPartyFee;
 
+        // Save the total fee
         request.fee = _fee.protocolFee + _fee.lockerFee + _fee.thirdPartyFee;
 
         // Save the request
@@ -213,6 +218,34 @@ library RuneRouterLib {
         _runeUnwrapRequests.push(request);
     }
 
+    function processFailedRequest(
+        mapping(bytes32 => RuneRouterStorage.runeWrapRequest)
+            storage _runeWrapRequests,
+        bytes32 _txId,
+        bytes memory _message,
+        bytes32 _r,
+        bytes32 _s,
+        uint8 _v,
+        uint _chainId
+    ) external {
+        // Check if the request is not processed & not transferred to the destination chain
+        require(
+            _runeWrapRequests[_txId].chainId != _chainId &&
+                !_runeWrapRequests[_txId].isTransferredToOtherChain,
+            "RuneRouterLogic: already processed"
+        );
+
+        // Verify signer is the original recipient
+        require(
+            verifySig(_message, _r, _s, _v) ==
+                _runeWrapRequests[_txId].recipientAddress,
+            "RuneRouterLogic: invalid signer"
+        );
+
+        // Mark the request as processed
+        _runeWrapRequests[_txId].isTransferredToOtherChain = true;
+    }
+
     /// @notice Verifies the signature of _msgHash
     /// @return _signer Address of message signer (if signature is valid)
     function verifySig(
@@ -234,28 +267,6 @@ library RuneRouterLib {
         require(signer != address(0), "RuneRouterLogic: Invalid sig");
 
         return signer;
-    }
-
-    function processFailedRequest(
-        mapping(bytes32 => RuneRouterStorage.runeWrapRequest)
-            storage _runeWrapRequests,
-        bytes32 _txId,
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v,
-        uint _chainId
-    ) external {
-        require(
-            _runeWrapRequests[_txId].chainId != _chainId && !_runeWrapRequests[_txId].isTransferredToOtherChain,
-            "RuneRouterLogic: already processed"
-        );
-        // Verify signer is the recipient
-        require(
-            verifySig(_message, _r, _s, _v) == _runeWrapRequests[_txId].recipientAddress,
-            "RuneRouterLogic: invalid signer"
-        );
-        _runeWrapRequests[_txId].isTransferredToOtherChain = true;
     }
 
     /// @notice Return chain id of the request
@@ -283,7 +294,7 @@ library RuneRouterLib {
     /// @notice Return token id of the request
     function _parseTokenId(
         bytes memory _requestData
-    ) internal pure returns (uint16 _parsedValue) {
+    ) internal pure returns (uint32 _parsedValue) {
         bytes memory slicedBytes = _sliceBytes(_requestData, 3, 6);
         assembly {
             _parsedValue := mload(add(slicedBytes, 4))

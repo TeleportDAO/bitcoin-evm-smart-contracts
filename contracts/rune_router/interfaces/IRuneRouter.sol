@@ -80,9 +80,6 @@ interface IRuneRouter {
     /// @notice Emit when Rune removed
     event RuneRemoved(uint tokenId, address wRuneProxy);
 
-    /// @notice Emit when unwrap fee updated
-    event UnwrapFeeUpdated(uint oldFee, uint newFee);
-
     /// @notice Emit when third party fee updated
     event ThirdPartyInfoUpdated(
         uint thirdPartyId,
@@ -113,7 +110,8 @@ interface IRuneRouter {
         address thirdPartyAddress,
         bytes32 txId,
         bool speed,
-        uint chainId
+        uint chainId,
+        uint bridgeFee
     );
 
     /// @notice Emit when a wrap&swap request is processed but swap failed
@@ -128,6 +126,19 @@ interface IRuneRouter {
         bytes32 txId,
         bool speed,
         uint chainId
+    );
+
+    event RetriedFailedWrapAndSwap(
+        uint256 outputAmount,
+        uint256 bridgeFee,
+        bytes32 txId
+    );
+
+    event WithdrawnFailedWrapAndSwap(
+        uint256 outputAmount,
+        bytes userScript,
+        ScriptTypes scriptType,
+        bytes32 txId
     );
 
     /// @notice Emit when a unwrap request is processed
@@ -198,8 +209,6 @@ interface IRuneRouter {
 
     function lockerScriptType() external view returns (ScriptTypes);
 
-    function unwrapFee() external view returns (uint);
-
     function totalRuneUnwrapRequests() external view returns (uint);
 
     // State-changing functions
@@ -232,8 +241,6 @@ interface IRuneRouter {
         bytes memory _lockerLockingScript,
         ScriptTypes _lockerScriptType
     ) external;
-
-    function setUnwrapFee(uint _newFee) external;
 
     function setThirdParty(
         uint _thirdPartyId,
@@ -289,7 +296,7 @@ interface IRuneRouter {
         uint _appId,
         uint _inputAmount,
         address[] memory _path
-    ) external payable;
+    ) external payable returns (uint256 _remainingAmount);
 
     function retryFailedWrapAndSwap(
         bytes memory _message,

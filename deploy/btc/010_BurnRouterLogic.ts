@@ -35,6 +35,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
             [],
             "contracts/routers/BurnRouterLogic.sol:BurnRouterLogic"
         );
+
+        await verify(
+            burnRouterLib.address,
+            [],
+            "contracts/libraries/BurnRouterLib.sol:BurnRouterLib"
+        );
     }
 };
 
