@@ -30,6 +30,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
             [], 
             "contracts/rune_router/RuneRouterLogic.sol:RuneRouterLogic"
         )
+
+        await verify(
+            runeRouterLib.address,
+            [],
+            "contracts/rune_router/RuneRouterLib.sol:RuneRouterLib"
+        );
     }
 };
 
