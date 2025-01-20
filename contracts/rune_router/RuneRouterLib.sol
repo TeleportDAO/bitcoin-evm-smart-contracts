@@ -53,19 +53,18 @@ library RuneRouterLib {
 
     /// @notice Extract request info and store it
     function wrapHelper(
-        uint _chainId,
         bytes memory _vout,
         bytes32 _txId,
         mapping(bytes32 => RuneRouterStorage.runeWrapRequest)
             storage _runeWrapRequests,
-        mapping(uint => address) storage _supportedRunes,
-        mapping(uint => RuneRouterStorage.thirdParty) storage _thirdParties,
-        uint _protocolPercentageFee,
-        uint _lockerPercentageFee
+        mapping(uint256 => address) storage _supportedRunes,
+        mapping(uint256 => RuneRouterStorage.thirdParty) storage _thirdParties,
+        uint256 _protocolPercentageFee,
+        uint256 _lockerPercentageFee
     )
         external
         returns (
-            uint _remainingAmount,
+            uint256 _remainingAmount,
             RuneRouterStorage.fees memory _fee,
             address _thirdPartyAddress,
             address _wrappedRune
@@ -82,15 +81,15 @@ library RuneRouterLib {
         (
             ,
             // Value
-            bytes memory requestData
+            bytes memory requestData // OP_RETURN data
         ) = BitcoinHelper.parseValueAndDataHavingLockingScriptSmallPayload(
                 _vout,
-                "0x"
+                "0x" // since we only interested in OP_RETURN data, we don't need to pass locking script
             );
 
         // 41 for wrap, 74 for wrapAndSwap
         require(
-            requestData.length == 41 || requestData.length == 74,
+            requestData.length == 41 || requestData.length == 78,
             "RuneRouterLib: invalid len"
         );
 
@@ -105,7 +104,10 @@ library RuneRouterLib {
             TOTAL = 41 BYTE (WRAP)
             7) outputToken, 20 byte: token address
             8) outputAmount, 13 byte: max 10^30 (= 1T * 10^18)
-            TOTAL = 74 BYTE (WRAP & EXCHANGE)
+            9) speed, 1 byte: 0 for normal, 1 for fast
+            9) bridgeFee, 3 byte: will be multiply by 10^11, 10^18 means 100%, so the minimum 
+            amount of fee percentage is 10^-5%
+            TOTAL = 78 BYTE (WRAP & SWAP)
         */
         request.isUsed = true;
         request.chainId = _parseChainId(requestData);
@@ -115,25 +117,30 @@ library RuneRouterLib {
         request.recipientAddress = _parseRecipientAddress(requestData);
         request.thirdPartyId = _parseThirdPartyId(requestData);
 
+        // Find third party address
         _thirdPartyAddress = _thirdParties[request.thirdPartyId]
             .thirdPartyAddress;
 
+        // Check app id for wrap and wrapAndSwap
         if (requestData.length == 41) {
             require(request.appId == 0, "RuneRouterLib: wrong app id");
         } else {
             require(request.appId != 0, "RuneRouterLib: wrong app id");
             request.outputToken = _parseOutputToken(requestData);
             request.outputAmount = _parseOutputAmount(requestData);
+            request.speed = _parseSpeed(requestData);
+            request.bridgeFee = _parseBridgeFee(requestData);
         }
 
-        // Some checks:
+        // Input amount must be greater than 0
         require(request.inputAmount > 0, "RuneRouterLib: zero input");
-        require(request.chainId == _chainId, "RuneRouterLib: wrong chain");
 
+        // Token id must be supported
         _wrappedRune = _supportedRunes[request.tokenId];
         require(_wrappedRune != address(0), "RuneRouterLib: not supported");
         request.inputToken = _wrappedRune;
 
+        // Calculate fees
         uint inputAmount = request.inputAmount;
         _fee.protocolFee = (inputAmount * _protocolPercentageFee) / 10000;
         _fee.lockerFee = (inputAmount * _lockerPercentageFee) / 10000;
@@ -146,6 +153,7 @@ library RuneRouterLib {
             _fee.lockerFee -
             _fee.thirdPartyFee;
 
+        // Save the total fee
         request.fee = _fee.protocolFee + _fee.lockerFee + _fee.thirdPartyFee;
 
         // Save the request
@@ -210,6 +218,57 @@ library RuneRouterLib {
         _runeUnwrapRequests.push(request);
     }
 
+    function processFailedRequest(
+        mapping(bytes32 => RuneRouterStorage.runeWrapRequest)
+            storage _runeWrapRequests,
+        bytes32 _txId,
+        bytes memory _message,
+        bytes32 _r,
+        bytes32 _s,
+        uint8 _v,
+        uint _chainId
+    ) external {
+        // Check if the request is not processed & not transferred to the destination chain
+        require(
+            _runeWrapRequests[_txId].chainId != _chainId &&
+                !_runeWrapRequests[_txId].isTransferredToOtherChain,
+            "RuneRouterLogic: already processed"
+        );
+
+        // Verify signer is the original recipient
+        require(
+            verifySig(_message, _r, _s, _v) ==
+                _runeWrapRequests[_txId].recipientAddress,
+            "RuneRouterLogic: invalid signer"
+        );
+
+        // Mark the request as processed
+        _runeWrapRequests[_txId].isTransferredToOtherChain = true;
+    }
+
+    /// @notice Verifies the signature of _msgHash
+    /// @return _signer Address of message signer (if signature is valid)
+    function verifySig(
+        bytes memory message,
+        bytes32 r,
+        bytes32 s,
+        uint8 v
+    ) private pure returns (address) {
+        // Compute the message hash
+        bytes32 messageHash = keccak256(message);
+
+        // Prefix the message hash as per the Ethereum signing standard
+        bytes32 ethSignedMessageHash = keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
+        );
+
+        // Verify the message using ecrecover
+        address signer = ecrecover(ethSignedMessageHash, v, r, s);
+        require(signer != address(0), "RuneRouterLogic: Invalid sig");
+
+        return signer;
+    }
+
     /// @notice Return chain id of the request
     /// @param _requestData Data written in Bitcoin tx
     function _parseChainId(
@@ -235,7 +294,7 @@ library RuneRouterLib {
     /// @notice Return token id of the request
     function _parseTokenId(
         bytes memory _requestData
-    ) internal pure returns (uint16 _parsedValue) {
+    ) internal pure returns (uint32 _parsedValue) {
         bytes memory slicedBytes = _sliceBytes(_requestData, 3, 6);
         assembly {
             _parsedValue := mload(add(slicedBytes, 4))
@@ -289,6 +348,26 @@ library RuneRouterLib {
         bytes memory slicedBytes = _sliceBytes(_requestData, 61, 73);
         assembly {
             _parsedValue := mload(add(slicedBytes, 13))
+        }
+    }
+
+    /// @notice Return speed
+    function _parseSpeed(
+        bytes memory _requestData
+    ) internal pure returns (bool _parsedValue) {
+        bytes memory slicedBytes = _sliceBytes(_requestData, 74, 74);
+        assembly {
+            _parsedValue := mload(add(slicedBytes, 1))
+        }
+    }
+
+    /// @notice Return bridge fee
+    function _parseBridgeFee(
+        bytes memory _requestData
+    ) internal pure returns (uint24 _parsedValue) {
+        bytes memory slicedBytes = _sliceBytes(_requestData, 75, 77);
+        assembly {
+            _parsedValue := mload(add(slicedBytes, 3))
         }
     }
 

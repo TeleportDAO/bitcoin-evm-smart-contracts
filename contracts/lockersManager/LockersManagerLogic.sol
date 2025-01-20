@@ -737,12 +737,6 @@ contract LockersManagerLogic is
         return true;
     }
 
-    /// @notice Liquidate Locker with unhealthy collateral
-    /// @dev Anyone can liquidate Locker with health factor under
-    ///      100% by providing a sufficient amount of TeleBTC.
-    /// @param _lockerTargetAddress Locker's target chain address
-    /// @param _collateralAmount Amount of collateral that someone wants to buy with discount
-    /// @return True if liquidation was successful
     function liquidateLocker(
         address _lockerTargetAddress,
         uint256 _collateralAmount
@@ -753,63 +747,81 @@ contract LockersManagerLogic is
         nonReentrant
         whenNotPaused
         returns (bool)
-    {
-        uint256 neededTeleBTC = LockersManagerLib.liquidateLocker(
-            lockersMapping[_lockerTargetAddress],
-            libConstants,
-            libParams,
-            lockerCollateralToken[_lockerTargetAddress],
-            collateralDecimal[lockerCollateralToken[_lockerTargetAddress]],
-            _collateralAmount,
-            lockerReliabilityFactor[_lockerTargetAddress]
-        );
+    {}
 
-        locker memory theLiquidatingLocker = lockersMapping[
-            _lockerTargetAddress
-        ];
+    // /// @notice Liquidate Locker with unhealthy collateral
+    // /// @dev Anyone can liquidate Locker with health factor under
+    // ///      100% by providing a sufficient amount of TeleBTC.
+    // /// @param _lockerTargetAddress Locker's target chain address
+    // /// @param _collateralAmount Amount of collateral that someone wants to buy with discount
+    // /// @return True if liquidation was successful
+    // function liquidateLocker(
+    //     address _lockerTargetAddress,
+    //     uint256 _collateralAmount
+    // )
+    //     external
+    //     override
+    //     nonZeroValue(_collateralAmount)
+    //     nonReentrant
+    //     whenNotPaused
+    //     returns (bool)
+    // {
+    //     uint256 neededTeleBTC = LockersManagerLib.liquidateLocker(
+    //         lockersMapping[_lockerTargetAddress],
+    //         libConstants,
+    //         libParams,
+    //         lockerCollateralToken[_lockerTargetAddress],
+    //         collateralDecimal[lockerCollateralToken[_lockerTargetAddress]],
+    //         _collateralAmount,
+    //         lockerReliabilityFactor[_lockerTargetAddress]
+    //     );
 
-        // Update locked collateral of locker
-        lockersMapping[_lockerTargetAddress].collateralTokenLockedAmount =
-            lockersMapping[_lockerTargetAddress].collateralTokenLockedAmount -
-            _collateralAmount;
+    //     locker memory theLiquidatingLocker = lockersMapping[
+    //         _lockerTargetAddress
+    //     ];
 
-        // transfer teleBTC from user
-        IERC20(teleBTC).safeTransferFrom(
-            msg.sender,
-            address(this),
-            neededTeleBTC
-        );
+    //     // Update locked collateral of locker
+    //     lockersMapping[_lockerTargetAddress].collateralTokenLockedAmount =
+    //         lockersMapping[_lockerTargetAddress].collateralTokenLockedAmount -
+    //         _collateralAmount;
 
-        // Burns TeleBTC for locker rescue script
-        IERC20(teleBTC).approve(burnRouter, neededTeleBTC);
-        IBurnRouter(burnRouter).unwrap(
-            neededTeleBTC,
-            theLiquidatingLocker.lockerRescueScript,
-            theLiquidatingLocker.lockerRescueType,
-            theLiquidatingLocker.lockerLockingScript,
-            0
-        );
+    //     // transfer teleBTC from user
+    //     IERC20(teleBTC).safeTransferFrom(
+    //         msg.sender,
+    //         address(this),
+    //         neededTeleBTC
+    //     );
 
-        if (lockerCollateralToken[_lockerTargetAddress] == NATIVE_TOKEN) {
-            Address.sendValue(payable(_msgSender()), _collateralAmount);
-        } else {
-            IERC20(lockerCollateralToken[_lockerTargetAddress]).transfer(
-                _msgSender(),
-                _collateralAmount
-            );
-        }
+    //     // Burns TeleBTC for locker rescue script
+    //     IERC20(teleBTC).approve(burnRouter, neededTeleBTC);
+    //     IBurnRouter(burnRouter).unwrap(
+    //         neededTeleBTC,
+    //         theLiquidatingLocker.lockerRescueScript,
+    //         theLiquidatingLocker.lockerRescueType,
+    //         theLiquidatingLocker.lockerLockingScript,
+    //         0
+    //     );
 
-        emit LockerLiquidated(
-            _lockerTargetAddress,
-            _msgSender(),
-            lockerCollateralToken[_lockerTargetAddress],
-            _collateralAmount,
-            neededTeleBTC,
-            block.timestamp
-        );
+    //     if (lockerCollateralToken[_lockerTargetAddress] == NATIVE_TOKEN) {
+    //         Address.sendValue(payable(_msgSender()), _collateralAmount);
+    //     } else {
+    //         IERC20(lockerCollateralToken[_lockerTargetAddress]).transfer(
+    //             _msgSender(),
+    //             _collateralAmount
+    //         );
+    //     }
 
-        return true;
-    }
+    //     emit LockerLiquidated(
+    //         _lockerTargetAddress,
+    //         _msgSender(),
+    //         lockerCollateralToken[_lockerTargetAddress],
+    //         _collateralAmount,
+    //         neededTeleBTC,
+    //         block.timestamp
+    //     );
+
+    //     return true;
+    // }
 
     /// @notice Sell slashed collateral of a Locker
     /// @dev Users buy the slashed collateral using TeleBTC with discount
@@ -1080,6 +1092,18 @@ contract LockersManagerLogic is
     }
 
     function renounceOwnership() public virtual override onlyOwner {}
+
+    /// @notice Emergency withdraw tokens from contract
+    function emergencyWithdraw(
+        address _token,
+        uint256 _amount
+    ) external onlyOwner nonReentrant {
+        if (_token == NATIVE_TOKEN) {
+            Address.sendValue(payable(owner()), _amount);
+        } else {
+            IERC20(_token).safeTransfer(owner(), _amount);
+        }
+    }
 
     /// @notice Return the Locker status
     /// @dev We check a locker status in below cases:

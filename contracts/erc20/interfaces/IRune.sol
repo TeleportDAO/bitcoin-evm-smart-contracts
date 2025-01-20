@@ -36,4 +36,6 @@ interface IRune is IERC20Upgradeable {
     function mint(address receiver, uint amount) external returns(bool);
 
     function burn(uint256 amount) external returns(bool);
+
+    function deposit() external payable;
 }

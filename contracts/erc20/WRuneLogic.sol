@@ -107,4 +107,6 @@ contract WRuneLogic is IRune, ERC20Upgradeable,
         emit Mint(_msgSender(), _receiver, _amount);
         return true;
     }
+
+    function deposit() external payable override {}
 }

@@ -12,7 +12,6 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "solidity-bytes-utils/contracts/BytesLib.sol";
 import "@across-protocol/contracts-v2/contracts/interfaces/SpokePoolInterface.sol";
-import "hardhat/console.sol";
 
 contract CcExchangeRouterLogic is
     CcExchangeRouterStorage,

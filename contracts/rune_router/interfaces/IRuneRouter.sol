@@ -19,6 +19,9 @@ interface IRuneRouter {
         uint fee;
         uint outputAmount;
         address outputToken;
+        uint bridgeFee;
+        bool speed;
+        bool isTransferredToOtherChain;
     }
 
     /// @notice Structure for recording unwrap and swap&unwrap requests
@@ -45,14 +48,6 @@ interface IRuneRouter {
 
     // Events
 
-    /// @notice Emits when appId for an exchange connector is set
-    /// @param appId Assigned application id to exchange
-    /// @param exchangeConnector Address of exchange connector contract
-    event SetExchangeConnector(uint appId, address exchangeConnector);
-
-    /// @notice Emit when relay address updated
-    event NewRelay(address oldRelay, address newRelay);
-
     /// @notice Emit when locker address updated
     event NewLocker(address oldLocker, address newLocker);
 
@@ -71,9 +66,6 @@ interface IRuneRouter {
         uint newLockerPercentageFee
     );
 
-    /// @notice Emit when treasury address updated
-    event NewTreasury(address oldTreasury, address newTreasury);
-
     /// @notice Emit when new Rune added
     event NewRune(
         string name,
@@ -87,9 +79,6 @@ interface IRuneRouter {
 
     /// @notice Emit when Rune removed
     event RuneRemoved(uint tokenId, address wRuneProxy);
-
-    /// @notice Emit when unwrap fee updated
-    event UnwrapFeeUpdated(uint oldFee, uint newFee);
 
     /// @notice Emit when third party fee updated
     event ThirdPartyInfoUpdated(
@@ -119,7 +108,10 @@ interface IRuneRouter {
         address outputToken,
         fees fee,
         address thirdPartyAddress,
-        bytes32 txId
+        bytes32 txId,
+        bool speed,
+        uint chainId,
+        uint bridgeFee
     );
 
     /// @notice Emit when a wrap&swap request is processed but swap failed
@@ -131,6 +123,21 @@ interface IRuneRouter {
         address outputToken,
         fees fee,
         address thirdPartyAddress,
+        bytes32 txId,
+        bool speed,
+        uint chainId
+    );
+
+    event RetriedFailedWrapAndSwap(
+        uint256 outputAmount,
+        uint256 bridgeFee,
+        bytes32 txId
+    );
+
+    event WithdrawnFailedWrapAndSwap(
+        uint256 outputAmount,
+        bytes userScript,
+        ScriptTypes scriptType,
         bytes32 txId
     );
 
@@ -202,8 +209,6 @@ interface IRuneRouter {
 
     function lockerScriptType() external view returns (ScriptTypes);
 
-    function unwrapFee() external view returns (uint);
-
     function totalRuneUnwrapRequests() external view returns (uint);
 
     // State-changing functions
@@ -237,8 +242,6 @@ interface IRuneRouter {
         ScriptTypes _lockerScriptType
     ) external;
 
-    function setUnwrapFee(uint _newFee) external;
-
     function setThirdParty(
         uint _thirdPartyId,
         address _thirdPartyAddress,
@@ -249,6 +252,8 @@ interface IRuneRouter {
         address _wrappedRune,
         address _virtualLocker
     ) external;
+
+    function setAcross(address _across) external;
 
     function addRune(
         string memory _name,
@@ -291,5 +296,19 @@ interface IRuneRouter {
         uint _appId,
         uint _inputAmount,
         address[] memory _path
-    ) external payable;
+    ) external payable returns (uint256 _remainingAmount);
+
+    function retryFailedWrapAndSwap(
+        bytes memory _message,
+        bytes32 _r,
+        bytes32 _s,
+        uint8 _v
+    ) external;
+
+    function withdrawFailedWrapAndSwap(
+        bytes memory _message,
+        bytes32 _r,
+        bytes32 _s,
+        uint8 _v
+    ) external;
 }

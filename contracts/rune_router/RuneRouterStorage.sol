@@ -27,7 +27,7 @@ abstract contract RuneRouterStorage is IRuneRouter {
     ScriptTypes public override lockerScriptType;
     address public override teleporter;
     mapping(uint => thirdParty) public thirdParties; // Mapping from thirdPartyId to thirdParty (address, fee)
-    uint public override unwrapFee; // This fee (which is in native token) covers cost of sending RUNE tokens to the user
+    uint public unwrapFee;
     address public wrappedNativeToken;
     address public rewardDistributor;
 
@@ -36,4 +36,6 @@ abstract contract RuneRouterStorage is IRuneRouter {
     // ^^ [wrappedRune address] => [virtualLockerAddress]
     // This mapping introduced bcz of reward distribution contract
     // In this contract each locker address can be used for one reward token
+    
+    address public across;
 }
