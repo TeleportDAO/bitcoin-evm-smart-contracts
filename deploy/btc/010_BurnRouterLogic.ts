@@ -31,15 +31,15 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         process.env.VERIFY_OPTION == "1"
     ) {
         await verify(
-            deployedContract.address,
-            [],
-            "contracts/routers/BurnRouterLogic.sol:BurnRouterLogic"
-        );
-
-        await verify(
             burnRouterLib.address,
             [],
             "contracts/libraries/BurnRouterLib.sol:BurnRouterLib"
+        );
+        
+        await verify(
+            deployedContract.address,
+            [],
+            "contracts/routers/BurnRouterLogic.sol:BurnRouterLogic"
         );
     }
 };

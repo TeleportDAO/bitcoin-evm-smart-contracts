@@ -605,11 +605,11 @@ contract LockersManagerLogic is
 
         // Sends back TST and collateral
         IERC20(TeleportSystemToken).safeTransfer(
-            _lockerTargetAddress,
+            owner(),
             _removingLocker.TSTLockedAmount
         );
         Address.sendValue(
-            payable(_lockerTargetAddress),
+            payable(owner()),
             _removingLocker.collateralTokenLockedAmount
         );
 

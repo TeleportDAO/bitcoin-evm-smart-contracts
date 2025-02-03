@@ -30,6 +30,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         process.env.ETHERSCAN_API_KEY &&
         process.env.VERIFY_OPTION == "1"
     ) {
+         // Verify the library
+        await verify(
+            ccExchangeRouterLib.address,
+            [],
+            "contracts/libraries/CcExchangeRouterLib.sol:CcExchangeRouterLib"
+        );
         await verify(
             deployedContract.address,
             [],

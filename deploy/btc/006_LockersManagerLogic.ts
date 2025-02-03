@@ -28,6 +28,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         process.env.VERIFY_OPTION == "1"
     ) {
         await verify(
+            lockersManagerLib.address,
+            [],
+            "contracts/libraries/LockersManagerLib.sol:LockersManagerLib"
+        );
+        await verify(
             deployedContract.address,
             [],
             "contracts/lockersManager/LockersManagerLogic.sol:LockersManagerLogic"

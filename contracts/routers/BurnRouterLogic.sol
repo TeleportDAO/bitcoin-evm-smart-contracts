@@ -656,7 +656,7 @@ contract BurnRouterLogic is
             _exchangeConnector
         ).swap(
                 _amounts[0],
-                _amounts[1],
+                _amounts[1] * 90 / 100, // TODO: _amounts[1]
                 _path,
                 address(this),
                 _deadline,
