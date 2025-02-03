@@ -262,7 +262,7 @@ contract CcExchangeRouterLogic is
             relay
         );
 
-        // Find destination chain Id (the final chain that user gets its token on it) from chainId
+        // Find destination chain Id (the final chain that user gets its token on it)
         uint256 destinationChainId = getDestChainId(
             extendedCcExchangeRequests[txId].chainId
         );
@@ -278,13 +278,13 @@ contract CcExchangeRouterLogic is
         // Find remained amount after reducing fees
         _mintAndReduceFees(_lockerLockingScript, txId);
 
+        // Handle fast request
         if (request.speed == 1) {
-            // Request that can be filled
             address filler = fillerAddress[txId][request.recipientAddress][
                 request.path[request.path.length - 1]
             ][request.outputAmount][destinationChainId];
 
-            if (filler != address(0)) {
+            if (filler != address(0)) { // If the request has been filled
                 // Send TeleBTC to filler who filled the request
                 _sendTeleBtcToFiller(
                     filler,
@@ -292,8 +292,12 @@ contract CcExchangeRouterLogic is
                     _lockerLockingScript,
                     destinationChainId
                 );
+                // TODO: emit event
                 return true;
-            } else {
+            } else { // If the request has not been filled
+                // Set the request as a normal request
+                ccExchangeRequests[txId].speed = 0;
+                
                 // Find new output amount
                 ccExchangeRequests[txId].outputAmount =
                     (ccExchangeRequests[txId].outputAmount *
@@ -303,23 +307,21 @@ contract CcExchangeRouterLogic is
             }
         }
 
-        if (destinationChainId == chainId) {
-            // Requests that belongs to the current chain
+        if (destinationChainId == chainId) { // Requests that belongs to the current chain
             require(
                 extendedCcExchangeRequests[txId].bridgeFee == 0,
-                "ExchangeRouter: invalid brdige fee"
+                "ExchangeRouter: invalid bridge fee"
             );
 
-            // Normal exchange request for a request which has not been filled
+            // Swap and send to the user
             _wrapAndSwap(_exchangeConnector, _lockerLockingScript, txId, _path);
-        } else {
-            // Requests that belongs to the other chain
+        } else { // Requests that belongs to the other chain
             require(
                 isChainSupported[destinationChainId],
                 "ExchangeRouter: invalid chain id"
             );
 
-            // Exchange and send to other chain for a request which has not been filled
+            // Swap and then send to the destination chain
             _wrapAndSwapToOtherChain(
                 _exchangeConnector,
                 _lockerLockingScript,
@@ -331,53 +333,6 @@ contract CcExchangeRouterLogic is
         }
 
         return true;
-    }
-
-    function _sendTeleBtcToFiller(
-        address _filler,
-        bytes32 _txId,
-        bytes memory _lockerLockingScript,
-        uint256 _destinationChainId
-    ) private {
-        ccExchangeRequest memory request = ccExchangeRequests[_txId];
-        extendedCcExchangeRequest
-            memory extendedRequest = extendedCcExchangeRequests[_txId];
-
-        // Send TeleBTC to filler
-        ITeleBTC(teleBTC).transfer(
-            _filler,
-            extendedRequest.remainedInputAmount
-        );
-
-        uint256[5] memory fees = [
-            request.fee,
-            extendedRequest.lockerFee,
-            extendedRequest.protocolFee,
-            extendedRequest.thirdPartyFee,
-            extendedRequest.bridgeFee
-        ];
-
-        emit NewWrapAndSwap(
-            ILockersManager(lockers).getLockerTargetAddress(
-                _lockerLockingScript
-            ),
-            request.recipientAddress,
-            [teleBTC, request.path[request.path.length - 1]],
-            [extendedRequest.remainedInputAmount, request.outputAmount],
-            1,
-            _msgSender(),
-            _txId,
-            request.appId,
-            extendedRequest.thirdParty,
-            fees,
-            _destinationChainId
-        );
-
-        emit FillerRefunded(
-            _filler,
-            _txId,
-            extendedRequest.remainedInputAmount
-        );
     }
 
     /// @notice Filler fills an upcoming exchange request
@@ -565,59 +520,63 @@ contract CcExchangeRouterLogic is
         return true;
     }
 
-    /// @notice Retry for failed exchange request by owner
-    /// @dev Owner cannot change output token and recipient address
-    function retryByOwner(
+    /// @notice Emergency withdraw tokens from contract
+    function emergencyWithdraw(
+        address _token,
+        uint256 _amount
+    ) external onlyOwner nonReentrant {
+        if (_token == NATIVE_TOKEN) {
+            Address.sendValue(payable(owner()), _amount);
+        } else {
+            IERC20(_token).transfer(owner(), _amount);
+        }
+    }
+
+    function _sendTeleBtcToFiller(
+        address _filler,
         bytes32 _txId,
-        uint256 _outputAmount,
-        uint256 _acrossRelayerFee,
-        address[] memory path,
-        bytes memory _lockerLockingScript
-    ) external onlyOwner nonReentrant returns (bool) {
-        // Use new output amount provided by user
-        ccExchangeRequests[_txId].outputAmount = _outputAmount;
-
-        // Load request and extended request to save gas
-        ccExchangeRequest memory exchangeReq = ccExchangeRequests[_txId];
+        bytes memory _lockerLockingScript,
+        uint256 _destinationChainId
+    ) private {
+        ccExchangeRequest memory request = ccExchangeRequests[_txId];
         extendedCcExchangeRequest
-            memory extendedReq = extendedCcExchangeRequests[_txId];
+            memory extendedRequest = extendedCcExchangeRequests[_txId];
 
-        /* Check that:
-           1. Request doesn't belong to the current chain
-           2. Request execution has been failed
-        */
-        require(
-            extendedReq.chainId != chainId &&
-                extendedReq.isTransferredToOtherChain == false,
-            "ExchangeRouter: already processed"
-        );
-        extendedCcExchangeRequests[_txId].isTransferredToOtherChain = true;
-
-        // Exchange teleBTC for desired exchange token
-        (bool result, uint256[] memory amounts) = _swap(
-            ICcExchangeRouter.swapArguments(
-                extendedReq.chainId,
-                _lockerLockingScript,
-                exchangeReq,
-                extendedReq,
-                _txId,
-                path,
-                exchangeConnector[exchangeReq.appId]
-            )
+        // Send TeleBTC to filler
+        ITeleBTC(teleBTC).transfer(
+            _filler,
+            extendedRequest.remainedInputAmount
         );
 
-        require(result, "ExchangeRouter: swap failed");
+        uint256[5] memory fees = [
+            request.fee,
+            extendedRequest.lockerFee,
+            extendedRequest.protocolFee,
+            extendedRequest.thirdPartyFee,
+            extendedRequest.bridgeFee
+        ];
 
-        // Send exchanged tokens to ETH
-        _sendTokenToOtherChain(
-            extendedCcExchangeRequests[_txId].chainId,
-            path[path.length - 1],
-            amounts[amounts.length - 1],
-            exchangeReq.recipientAddress,
-            _acrossRelayerFee
+        emit NewWrapAndSwap(
+            ILockersManager(lockers).getLockerTargetAddress(
+                _lockerLockingScript
+            ),
+            request.recipientAddress,
+            [teleBTC, request.path[request.path.length - 1]],
+            [extendedRequest.remainedInputAmount, request.outputAmount],
+            1,
+            _msgSender(),
+            _txId,
+            request.appId,
+            extendedRequest.thirdParty,
+            fees,
+            _destinationChainId
         );
 
-        return true;
+        emit FillerRefunded(
+            _filler,
+            _txId,
+            extendedRequest.remainedInputAmount
+        );
     }
 
     /// @notice Send tokens to the destination using Across
@@ -737,53 +696,30 @@ contract CcExchangeRouterLogic is
                 swapArguments._extendedCcExchangeRequest.remainedInputAmount
             );
 
-            if (
-                IDexConnector(swapArguments._exchangeConnector).isPathValid(
-                    swapArguments._path
-                )
-            ) {
-                require(
-                    swapArguments._path[0] == teleBTC &&
-                        swapArguments._path[swapArguments._path.length - 1] ==
-                        swapArguments._ccExchangeRequest.path[
-                            swapArguments._ccExchangeRequest.path.length - 1
-                        ],
-                    "CcExchangeRouter: invalid path"
-                );
-                (result, amounts) = IDexConnector(
-                    swapArguments._exchangeConnector
-                ).swap(
-                        swapArguments
-                            ._extendedCcExchangeRequest
-                            .remainedInputAmount,
-                        swapArguments._ccExchangeRequest.outputAmount,
-                        swapArguments._path,
-                        swapArguments.destinationChainId == chainId
-                            ? swapArguments._ccExchangeRequest.recipientAddress
-                            : address(this),
-                        block.timestamp,
-                        true
-                    );
+            // Check if the provided path is valid
+            require(
+                swapArguments._path[0] == teleBTC &&
+                    swapArguments._path[swapArguments._path.length - 1] ==
+                    swapArguments._ccExchangeRequest.path[
+                        swapArguments._ccExchangeRequest.path.length - 1
+                    ],
+                "CcExchangeRouter: invalid path"
+            );
 
-                if (!result) {
-                    (result, amounts) = IDexConnector(
-                        swapArguments._exchangeConnector
-                    ).swap(
-                            swapArguments
-                                ._extendedCcExchangeRequest
-                                .remainedInputAmount,
-                            swapArguments._ccExchangeRequest.outputAmount,
-                            swapArguments._ccExchangeRequest.path,
-                            swapArguments.destinationChainId == chainId
-                                ? swapArguments
-                                    ._ccExchangeRequest
-                                    .recipientAddress
-                                : address(this),
-                            block.timestamp,
-                            true
-                        );
-                }
-            }
+            // Swap teleBTC for the output token
+            (result, amounts) = IDexConnector(swapArguments._exchangeConnector)
+                .swap(
+                    swapArguments
+                        ._extendedCcExchangeRequest
+                        .remainedInputAmount,
+                    swapArguments._ccExchangeRequest.outputAmount * 90 / 100, // TODO: swapArguments._ccExchangeRequest.outputAmount
+                    swapArguments._path,
+                    swapArguments.destinationChainId == chainId
+                        ? swapArguments._ccExchangeRequest.recipientAddress
+                        : address(this),
+                    block.timestamp,
+                    true
+                );
         } else {
             result = false;
         }

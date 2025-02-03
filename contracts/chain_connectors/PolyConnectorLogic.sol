@@ -422,7 +422,7 @@ contract PolyConnectorLogic is
         IERC20(_tokenSent).approve(runeRouterProxy, _amount);
 
         try
-            IRuneRouter(runeRouterProxy).unwrapRune(
+            IRuneRouter(runeRouterProxy).unwrapRune{value: 0}(
                 arguments.thirdPartyId,
                 arguments.internalId,
                 arguments.outputAmount,
