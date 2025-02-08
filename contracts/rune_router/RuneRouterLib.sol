@@ -79,17 +79,27 @@ library RuneRouterLib {
         RuneRouterStorage.runeWrapRequest memory request;
 
         (
-            ,
-            // Value
+            , // Value
             bytes memory requestData // OP_RETURN data
         ) = BitcoinHelper.parseValueAndDataHavingLockingScriptSmallPayload(
                 _vout,
                 "0x" // since we only interested in OP_RETURN data, we don't need to pass locking script
             );
 
-        // 41 for wrap, 74 for wrapAndSwap
+        // If small payload returned empty, try big payload
+        if (requestData.length == 0) {
+            (
+                , // Value
+                requestData // OP_RETURN data
+            ) = BitcoinHelper.parseValueAndDataHavingLockingScriptBigPayload(
+                    _vout,
+                    "0x"
+                );
+        }
+
+        // 41 for wrap, 74 for old wrapAndSwap, 78 for new wrapAndSwap
         require(
-            requestData.length == 41 || requestData.length == 78,
+            requestData.length == 41 || requestData.length == 74 || requestData.length == 78,
             "RuneRouterLib: invalid len"
         );
 
@@ -104,10 +114,11 @@ library RuneRouterLib {
             TOTAL = 41 BYTE (WRAP)
             7) outputToken, 20 byte: token address
             8) outputAmount, 13 byte: max 10^30 (= 1T * 10^18)
+            TOTAL = 74 BYTE (OLD WRAP & SWAP)
             9) speed, 1 byte: 0 for normal, 1 for fast
-            9) bridgeFee, 3 byte: will be multiply by 10^11, 10^18 means 100%, so the minimum 
+            10) bridgeFee, 3 byte: will be multiply by 10^11, 10^18 means 100%, so the minimum 
             amount of fee percentage is 10^-5%
-            TOTAL = 78 BYTE (WRAP & SWAP)
+            TOTAL = 78 BYTE (NEW WRAP & SWAP)
         */
         request.isUsed = true;
         request.chainId = _parseChainId(requestData);
@@ -128,8 +139,13 @@ library RuneRouterLib {
             require(request.appId != 0, "RuneRouterLib: wrong app id");
             request.outputToken = _parseOutputToken(requestData);
             request.outputAmount = _parseOutputAmount(requestData);
-            request.speed = _parseSpeed(requestData);
-            request.bridgeFee = _parseBridgeFee(requestData);
+            if (requestData.length == 74) {
+                require(request.chainId == 137, "RuneRouterLib: wrong chain id");
+            } else {
+                require(request.chainId != 137, "RuneRouterLib: wrong chain id");
+                request.speed = _parseSpeed(requestData);
+                request.bridgeFee = _parseBridgeFee(requestData);
+            }
         }
 
         // Input amount must be greater than 0

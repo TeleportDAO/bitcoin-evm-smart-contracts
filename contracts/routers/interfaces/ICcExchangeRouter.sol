@@ -392,10 +392,6 @@ interface ICcExchangeRouter {
     //    bytes32 _txId
     // ) external returns (bool);
 
-    function supportToken(uint _chainId, address _token) external;
-
-    function removeToken(uint _chainId, address _token) external;
-
     function supportChain(uint _chainId) external;
 
     function removeChain(uint _chainId) external;

@@ -352,26 +352,36 @@ contract RuneRouterLogic is
             );
 
             if (result) { // Swap successful
-                emit NewRuneWrapAndSwap(
-                    request.recipientAddress,
-                    remainingAmount, // Input amount
-                    wrappedRune,
-                    outputAmount,
-                    request.outputToken,
-                    fee,
-                    _thirdPartyAddress,
-                    txId,
-                    request.speed,
-                    request.chainId,
-                    request.bridgeFee
-                );
-                if (request.chainId == chainId) {
+                if (request.chainId == chainId) { // Destination chain == the current chain
+                    emit NewRuneWrapAndSwap(
+                        request.recipientAddress,
+                        remainingAmount,
+                        wrappedRune,
+                        outputAmount,
+                        request.outputToken,
+                        fee,
+                        _thirdPartyAddress,
+                        txId
+                    );
                     // Transfer exchanged tokens directly to user
                     IRune(request.outputToken).transfer(
                         request.recipientAddress,
                         outputAmount
                     );
-                } else {
+                } else { // Destination chain != the current chain
+                    emit NewRuneWrapAndSwapV2(
+                        request.recipientAddress,
+                        remainingAmount, // Input amount
+                        wrappedRune,
+                        outputAmount,
+                        request.outputToken,
+                        fee,
+                        _thirdPartyAddress,
+                        txId,
+                        request.speed,
+                        request.chainId,
+                        request.bridgeFee
+                    );
                     // Transfer exchanged tokens to user on the destination chain using Across
                     runeWrapRequests[txId].isTransferredToOtherChain = true;
                     _sendTokenToOtherChain(
@@ -764,7 +774,7 @@ contract RuneRouterLogic is
         uint256[] memory _amounts;
         (_result, _amounts) = IDexConnector(_exchangeConnector).swap(
             _inputAmount,
-            _outputAmount,
+            _outputAmount * 90 / 100, // TODO: Remove this
             _path,
             _recipientAddress,
             block.timestamp,

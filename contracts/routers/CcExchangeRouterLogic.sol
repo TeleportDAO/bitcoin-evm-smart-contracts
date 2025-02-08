@@ -167,26 +167,6 @@ contract CcExchangeRouterLogic is
         _setChainIdMapping(_destinationChain, _mappedId);
     }
 
-    /// @notice Support a new token on specific chain
-    /// @dev Users can only submit exchange requests for supported tokens.
-    ///      By default, all tokens are supported on the current chain.
-    function supportToken(
-        uint256 chainId,
-        address _token
-    ) external override onlyOwner {
-        emit TokenAdded(chainId, _token);
-        isTokenSupported[chainId][_token] = true;
-    }
-
-    /// @notice Remove a token from supported tokens
-    function removeToken(
-        uint256 chainId,
-        address _token
-    ) external override onlyOwner {
-        emit TokenRemoved(chainId, _token);
-        isTokenSupported[chainId][_token] = false;
-    }
-
     /// @notice Support a new chain
     /// @dev Users can only submit exchange requests for supported chains.
     function supportChain(uint256 _chainId) external override onlyOwner {
@@ -493,7 +473,7 @@ contract CcExchangeRouterLogic is
             "ExchangeRouter: invalid signer"
         );
 
-        // Exchange teleBTC for desired exchange token
+        // Swap TeleBTC for the desired token
         (bool result, uint256[] memory amounts) = _swap(
             ICcExchangeRouter.swapArguments(
                 extendedReq.chainId,
@@ -508,7 +488,7 @@ contract CcExchangeRouterLogic is
 
         require(result, "ExchangeRouter: swap failed");
 
-        // Send exchanged tokens to ETH
+        // Send exchanged tokens to the destination chain
         _sendTokenToOtherChain(
             extendedCcExchangeRequests[_txId].chainId,
             path[path.length - 1],
@@ -588,7 +568,6 @@ contract CcExchangeRouterLogic is
         uint256 _acrossRelayerFee
     ) private {
         IERC20(_token).approve(across, _amount);
-
         SpokePoolInterface(across).deposit(
             _user,
             _token,
@@ -636,7 +615,7 @@ contract CcExchangeRouterLogic is
         bytes memory _lockerLockingScript,
         bytes32 _txId,
         address[] memory _path,
-        uint256 _acrossRelayerFee, // TODO fix in future: teleporter sets across relayer fee and use this as maximum amount of it
+        uint256 _acrossRelayerFee, // TODO: get the bridge fee from teleporter (use this as maximum amount of it)
         uint256 _chainId
     ) private {
         (bool result, uint256[] memory amounts) = _swap(
@@ -651,10 +630,9 @@ contract CcExchangeRouterLogic is
             )
         );
 
-        if (result) {
-            // if swap is successfull, user will get desired tokens on destination chain
+        if (result) { // If swap was successfull, user will get tokens on destination chain
             extendedCcExchangeRequests[_txId].isTransferredToOtherChain = true;
-            // Send exchanged tokens to ETH
+
             _sendTokenToOtherChain(
                 extendedCcExchangeRequests[_txId].chainId,
                 _path[_path.length - 1],
@@ -662,69 +640,46 @@ contract CcExchangeRouterLogic is
                 ccExchangeRequests[_txId].recipientAddress,
                 _acrossRelayerFee
             );
-        } else {
-            // if swap fails, someone needs to call:
-            // withdrawFailedWrapAndSwap: to burn minted telebtc and user gets them back
-            // or
-            // retryFailedWrapAndSwap: to retry swap and send swapped tokens to other chain
-            // on current chain
-            ITeleBTC(teleBTC).approve(
-                _exchangeConnector,
-                extendedCcExchangeRequests[_txId].remainedInputAmount
-            );
         }
+        // If swap failed, keep TeleBTC in the contract for retry
     }
 
     /// @notice Swap TeleBTC for the output token
-    /// @dev First try to swap with the given path, if it fails,
-    ///      try to swap with the default path (teleBTC -> output token)
     function _swap(
         ICcExchangeRouter.swapArguments memory swapArguments
     ) private returns (bool result, uint256[] memory amounts) {
-        if (
-            swapArguments.destinationChainId == chainId ||
-            isTokenSupported[swapArguments.destinationChainId][
-                swapArguments._path[swapArguments._path.length - 1]
-            ]
-        ) {
-            // Either the destination chain should be the current chain or
-            // we should be able to send exchanged tokens to the destination chain
+        // Give allowance to exchange connector for swapping
+        ITeleBTC(teleBTC).approve(
+            swapArguments._exchangeConnector,
+            swapArguments._extendedCcExchangeRequest.remainedInputAmount
+        );
 
-            // Gives allowance to exchange connector for swapping
-            ITeleBTC(teleBTC).approve(
-                swapArguments._exchangeConnector,
-                swapArguments._extendedCcExchangeRequest.remainedInputAmount
+        // Check if the provided path is valid
+        require(
+            swapArguments._path[0] == teleBTC &&
+                swapArguments._path[swapArguments._path.length - 1] ==
+                swapArguments._ccExchangeRequest.path[
+                    swapArguments._ccExchangeRequest.path.length - 1
+                ],
+            "CcExchangeRouter: invalid path"
+        );
+
+        // Swap teleBTC for the output token
+        (result, amounts) = IDexConnector(swapArguments._exchangeConnector)
+            .swap(
+                swapArguments
+                    ._extendedCcExchangeRequest
+                    .remainedInputAmount,
+                swapArguments._ccExchangeRequest.outputAmount * 90 / 100, // TODO: swapArguments._ccExchangeRequest.outputAmount
+                swapArguments._path,
+                swapArguments.destinationChainId == chainId
+                    ? swapArguments._ccExchangeRequest.recipientAddress
+                    : address(this),
+                block.timestamp,
+                true
             );
 
-            // Check if the provided path is valid
-            require(
-                swapArguments._path[0] == teleBTC &&
-                    swapArguments._path[swapArguments._path.length - 1] ==
-                    swapArguments._ccExchangeRequest.path[
-                        swapArguments._ccExchangeRequest.path.length - 1
-                    ],
-                "CcExchangeRouter: invalid path"
-            );
-
-            // Swap teleBTC for the output token
-            (result, amounts) = IDexConnector(swapArguments._exchangeConnector)
-                .swap(
-                    swapArguments
-                        ._extendedCcExchangeRequest
-                        .remainedInputAmount,
-                    swapArguments._ccExchangeRequest.outputAmount * 90 / 100, // TODO: swapArguments._ccExchangeRequest.outputAmount
-                    swapArguments._path,
-                    swapArguments.destinationChainId == chainId
-                        ? swapArguments._ccExchangeRequest.recipientAddress
-                        : address(this),
-                    block.timestamp,
-                    true
-                );
-        } else {
-            result = false;
-        }
-
-        if (result) {
+        if (result) { // Successfull swap
             uint256 bridgeFee = (amounts[amounts.length - 1] *
                 swapArguments._extendedCcExchangeRequest.bridgeFee) /
                 MAX_BRIDGE_FEE;
@@ -752,8 +707,7 @@ contract CcExchangeRouterLogic is
                 fees,
                 swapArguments.destinationChainId
             );
-        } else {
-            // Handled situation where exchange fails
+        } else { // Failed swap
             uint256[5] memory fees = [
                 swapArguments._ccExchangeRequest.fee,
                 swapArguments._extendedCcExchangeRequest.lockerFee,

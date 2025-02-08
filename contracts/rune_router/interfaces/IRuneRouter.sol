@@ -108,6 +108,18 @@ interface IRuneRouter {
         address outputToken,
         fees fee,
         address thirdPartyAddress,
+        bytes32 txId
+    );
+
+    /// @notice Emit when a wrap&swap request is processed
+    event NewRuneWrapAndSwapV2(
+        address user,
+        uint remainingAmount,
+        address inputToken,
+        uint outputAmount,
+        address outputToken,
+        fees fee,
+        address thirdPartyAddress,
         bytes32 txId,
         bool speed,
         uint chainId,
