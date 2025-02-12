@@ -152,8 +152,8 @@ contract EthConnectorLogic is
 
     /// @notice Internal function to validate ETH/token transfer
     function _validateTransfer(address _token, uint256 _amount) private view {
-        if (_token == ETH_ADDR) {
-            require(msg.value == _amount, "EthConnectorLogic: wrong value");
+        if (msg.value == _amount) {
+            require(_token == ETH_ADDR || _token == wrappedNativeToken, "EthConnectorLogic: wrong value");
         } else {
             require(msg.value == 0, "EthConnectorLogic: wrong value");
         }
@@ -168,7 +168,7 @@ contract EthConnectorLogic is
     ) internal {
         uniqueCounter++;
 
-        if (_token == ETH_ADDR) {
+        if (msg.value > 0) { // Token is ETH
             _token = wrappedNativeToken;
         } else {
             // Transfer tokens from user to contract

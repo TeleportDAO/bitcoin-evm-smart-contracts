@@ -74,6 +74,11 @@ const config: HardhatUserConfig = {
 			chainId: 8453,
 			accounts: [process.env.PRIVATE_KEY ?? ""]
 		},
+		unichain: {
+			url: "https://mainnet.unichain.org",
+			chainId: 130,
+			accounts: [process.env.PRIVATE_KEY ?? ""]
+		},
 		bsquared: {
 			url: "https://rpc.bsquared.network",
 			chainId: 223,
@@ -127,7 +132,8 @@ const config: HardhatUserConfig = {
 			bsquared: process.env.ETHERSCAN_API_KEY??"",
 			amoy: process.env.ETHERSCAN_API_KEY??"",
 			sepolia: process.env.ETHERSCAN_API_KEY??"",
-			bob: process.env.ETHERSCAN_API_KEY??""
+			bob: process.env.ETHERSCAN_API_KEY??"",
+			unichain: process.env.ETHERSCAN_API_KEY??""
   		},
 		customChains: [
 			{
@@ -176,6 +182,14 @@ const config: HardhatUserConfig = {
 				urls: {
 					apiURL: "https://api-optimistic.etherscan.io/api",
 					browserURL: "https://optimism.etherscan.io/"
+				}
+			},
+			{
+				network: "unichain",
+				chainId: 130,
+				urls: {
+					apiURL: "https://unichain.blockscout.com/api",
+					browserURL: "https://unichain.blockscout.com/"
 				}
 			},
 			{

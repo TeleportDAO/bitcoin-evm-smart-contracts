@@ -280,7 +280,13 @@ contract RuneRouterLogic is
         uint _index,
         address[] memory _path
     ) external payable override nonReentrant {
-        require(_msgSender() == teleporter, "Router: not teleporter");
+        // TODO: Remove this
+        address tempTeleporter = 0x4a00edf7F07Ecb48a4A3FD798e0fb79D90ef21a9;
+
+        require(
+            _msgSender() == teleporter || _msgSender() == tempTeleporter,
+            "Router: not teleporter"
+        );
 
         // Find txId and check its inclusion
         bytes32 txId = RuneRouterLib.checkTx(
@@ -319,7 +325,8 @@ contract RuneRouterLogic is
         // Distribute fees
         _distributeFees(fee, wrappedRune, _thirdPartyAddress);
 
-        if (request.appId == 0) { // This is a wrap request
+        if (request.appId == 0) {
+            // This is a wrap request
             // Transfer wrapped tokens to user
             IRune(wrappedRune).transfer(
                 request.recipientAddress,
@@ -334,7 +341,8 @@ contract RuneRouterLogic is
                 _thirdPartyAddress,
                 txId
             );
-        } else { // This is wrap & sw request
+        } else {
+            // This is wrap & sw request
             // Check exchange path provided by teleporter
             require(
                 _path[0] == request.inputToken &&
@@ -351,8 +359,10 @@ contract RuneRouterLogic is
                 _path
             );
 
-            if (result) { // Swap successful
-                if (request.chainId == chainId) { // Destination chain == the current chain
+            if (result) {
+                // Swap successful
+                if (request.chainId == chainId) {
+                    // Destination chain == the current chain
                     emit NewRuneWrapAndSwap(
                         request.recipientAddress,
                         remainingAmount,
@@ -368,7 +378,8 @@ contract RuneRouterLogic is
                         request.recipientAddress,
                         outputAmount
                     );
-                } else { // Destination chain != the current chain
+                } else {
+                    // Destination chain != the current chain
                     emit NewRuneWrapAndSwapV2(
                         request.recipientAddress,
                         remainingAmount, // Input amount
@@ -392,7 +403,8 @@ contract RuneRouterLogic is
                         request.bridgeFee
                     );
                 }
-            } else { // Swap failed
+            } else {
+                // Swap failed
                 emit FailedRuneWrapAndSwap(
                     request.recipientAddress,
                     remainingAmount,
@@ -411,7 +423,8 @@ contract RuneRouterLogic is
                         request.recipientAddress,
                         remainingAmount
                     );
-                } else { // Request belongs to another chain
+                } else {
+                    // Request belongs to another chain
                     // Contract keeps the wrapped rune tokens
                     // Update input amount to remaining amount
                     runeWrapRequests[txId].inputAmount = remainingAmount;
@@ -439,11 +452,13 @@ contract RuneRouterLogic is
         address token = supportedRunes[_internalId];
         require(token != address(0), "Router: not supported");
 
-        if (_path.length != 0) { // This is a swap and unwrap request
+        if (_path.length != 0) {
+            // This is a swap and unwrap request
             // Check if the last token in the path is the same as the token
             require(_path[_path.length - 1] == token, "Router: wrong path");
 
-            if (msg.value > 0) { // Input token is native token
+            if (msg.value > 0) {
+                // Input token is native token
                 require(
                     msg.value == _inputAmount && wrappedNativeToken == _path[0],
                     "Router: wrong value or token"
@@ -451,7 +466,8 @@ contract RuneRouterLogic is
 
                 // Mint wrapped native token
                 IRune(wrappedNativeToken).deposit{value: _inputAmount}();
-            } else { // Input token is not native token
+            } else {
+                // Input token is not native token
                 // Transfer user's tokens to contract
                 IRune(_path[0]).transferFrom(
                     _msgSender(),
@@ -470,7 +486,8 @@ contract RuneRouterLogic is
                 _path
             );
             require(result, "Router: swap failed");
-        } else { // This is a unwrap request
+        } else {
+            // This is a unwrap request
             // Transfer user's tokens to contract
             require(
                 IRune(token).transferFrom(_msgSender(), address(this), _amount),
@@ -727,13 +744,16 @@ contract RuneRouterLogic is
     ) private {
         // Send protocol fee to the treasury
         IRune(_wrappedRune).transfer(treasury, _fees.protocolFee);
-        
+
         // Send locker fee using the existing internal function
         _sendLockerFee(_fees.lockerFee, _wrappedRune);
-        
+
         // If a third-party address is provided, transfer the third-party fee
         if (_thirdPartyAddress != address(0)) {
-            IRune(_wrappedRune).transfer(_thirdPartyAddress, _fees.thirdPartyFee);
+            IRune(_wrappedRune).transfer(
+                _thirdPartyAddress,
+                _fees.thirdPartyFee
+            );
         }
     }
 
@@ -774,13 +794,17 @@ contract RuneRouterLogic is
         uint256[] memory _amounts;
         (_result, _amounts) = IDexConnector(_exchangeConnector).swap(
             _inputAmount,
-            _outputAmount * 90 / 100, // TODO: Remove this
+            (_outputAmount * 90) / 100, // TODO: Remove this
             _path,
             _recipientAddress,
             block.timestamp,
             true // Input amount is fixed
         );
-        _finalOutputAmount = _amounts[_amounts.length - 1];
+
+        if (_result) { // If swap is successful
+            _finalOutputAmount = _amounts[_amounts.length - 1];
+        }
+        // If swap is not successful, return 0
     }
 
     /// @notice Send tokens to the destination using Across

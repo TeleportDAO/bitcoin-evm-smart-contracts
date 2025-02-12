@@ -8,7 +8,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const { deployments, network } = hre;
     const ZERO_ADD = "0x0000000000000000000000000000000000000000";
 
-    const polygonTeleBTC = config.get("polygon_teleBTC");
     const across = config.get("across");
     const wrappedNativeToken = config.get("wrapped_native_token");
     const targetChainId = config.get("target_chain_id");
@@ -84,7 +83,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
             await ethConnectorProxyInstance.wrappedNativeToken();
         if (_wrappedNativeToken == ZERO_ADD) {
             const initializeTx = await ethConnectorProxyInstance.initialize(
-                polygonTeleBTC,
                 across,
                 wrappedNativeToken,
                 targetChainId,
@@ -100,7 +98,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
             await lockersManagerLogicInstance.wrappedNativeToken();
         if (_wrappedNativeToken == ZERO_ADD) {
             const initializeTx = await lockersManagerLogicInstance.initialize(
-                polygonTeleBTC,
                 across,
                 wrappedNativeToken,
                 targetChainId,
