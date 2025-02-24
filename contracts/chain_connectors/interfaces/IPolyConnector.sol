@@ -103,6 +103,7 @@ interface IPolyConnector {
     );
 
     event NewSwapAndUnwrapRune(
+        uint256 uniqueCounter,
         uint256 chainId,
         address indexed userTargetAddress,
         uint256 thirdPartyId,
@@ -117,6 +118,7 @@ interface IPolyConnector {
     );
 
     event FailedSwapAndUnwrapRune(
+        uint256 uniqueCounter,
         uint256 chainId,
         address indexed userTargetAddress,
         uint256 thirdPartyId,

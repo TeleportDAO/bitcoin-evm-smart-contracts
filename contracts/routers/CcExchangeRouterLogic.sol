@@ -6,6 +6,7 @@ import "./CcExchangeRouterStorageV2.sol";
 import "./interfaces/IBurnRouter.sol";
 import "../dex_connectors/interfaces/IDexConnector.sol";
 import "../erc20/interfaces/ITeleBTC.sol";
+import "../erc20/WETH.sol";
 import "../lockersManager/interfaces/ILockersManager.sol";
 import "../libraries/CcExchangeRouterLib.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -264,7 +265,8 @@ contract CcExchangeRouterLogic is
                 request.path[request.path.length - 1]
             ][request.outputAmount][destinationChainId];
 
-            if (filler != address(0)) { // If the request has been filled
+            if (filler != address(0)) {
+                // If the request has been filled
                 // Send TeleBTC to filler who filled the request
                 _sendTeleBtcToFiller(
                     filler,
@@ -274,10 +276,11 @@ contract CcExchangeRouterLogic is
                 );
                 // TODO: emit event
                 return true;
-            } else { // If the request has not been filled
+            } else {
+                // If the request has not been filled
                 // Set the request as a normal request
                 ccExchangeRequests[txId].speed = 0;
-                
+
                 // Find new output amount
                 ccExchangeRequests[txId].outputAmount =
                     (ccExchangeRequests[txId].outputAmount *
@@ -287,7 +290,8 @@ contract CcExchangeRouterLogic is
             }
         }
 
-        if (destinationChainId == chainId) { // Requests that belongs to the current chain
+        if (destinationChainId == chainId) {
+            // Requests that belongs to the current chain
             require(
                 extendedCcExchangeRequests[txId].bridgeFee == 0,
                 "ExchangeRouter: invalid bridge fee"
@@ -295,7 +299,8 @@ contract CcExchangeRouterLogic is
 
             // Swap and send to the user
             _wrapAndSwap(_exchangeConnector, _lockerLockingScript, txId, _path);
-        } else { // Requests that belongs to the other chain
+        } else {
+            // Requests that belongs to the other chain
             require(
                 isChainSupported[destinationChainId],
                 "ExchangeRouter: invalid chain id"
@@ -630,7 +635,8 @@ contract CcExchangeRouterLogic is
             )
         );
 
-        if (result) { // If swap was successfull, user will get tokens on destination chain
+        if (result) {
+            // If swap was successfull, user will get tokens on destination chain
             extendedCcExchangeRequests[_txId].isTransferredToOtherChain = true;
 
             _sendTokenToOtherChain(
@@ -665,21 +671,41 @@ contract CcExchangeRouterLogic is
         );
 
         // Swap teleBTC for the output token
+        // Swapped token is sent to the contract
         (result, amounts) = IDexConnector(swapArguments._exchangeConnector)
             .swap(
-                swapArguments
-                    ._extendedCcExchangeRequest
-                    .remainedInputAmount,
-                swapArguments._ccExchangeRequest.outputAmount * 90 / 100, // TODO: swapArguments._ccExchangeRequest.outputAmount
+                swapArguments._extendedCcExchangeRequest.remainedInputAmount,
+                (swapArguments._ccExchangeRequest.outputAmount * 90) / 100, // TODO: swapArguments._ccExchangeRequest.outputAmount
                 swapArguments._path,
-                swapArguments.destinationChainId == chainId
-                    ? swapArguments._ccExchangeRequest.recipientAddress
-                    : address(this),
+                address(this),
                 block.timestamp,
                 true
             );
 
-        if (result) { // Successfull swap
+        if (swapArguments.destinationChainId == chainId) {
+            address _outputToken = swapArguments._path[
+                swapArguments._path.length - 1
+            ];
+            uint256 _outputAmount = amounts[amounts.length - 1];
+            if (_outputToken != wrappedNativeToken) {
+                // Send swapped token to the user
+                ITeleBTC(_outputToken).transfer(
+                    swapArguments._ccExchangeRequest.recipientAddress,
+                    _outputAmount
+                );
+            } else {
+                // Unwrap the wrapped native token
+                WETH(wrappedNativeToken).withdraw(_outputAmount);
+                // Send native token to the user
+                Address.sendValue(
+                    payable(swapArguments._ccExchangeRequest.recipientAddress),
+                    _outputAmount
+                );
+            }
+        }
+
+        if (result) {
+            // Successfull swap
             uint256 bridgeFee = (amounts[amounts.length - 1] *
                 swapArguments._extendedCcExchangeRequest.bridgeFee) /
                 MAX_BRIDGE_FEE;
@@ -707,7 +733,8 @@ contract CcExchangeRouterLogic is
                 fees,
                 swapArguments.destinationChainId
             );
-        } else { // Failed swap
+        } else {
+            // Failed swap
             uint256[5] memory fees = [
                 swapArguments._ccExchangeRequest.fee,
                 swapArguments._extendedCcExchangeRequest.lockerFee,

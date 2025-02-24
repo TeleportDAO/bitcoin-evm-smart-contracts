@@ -434,6 +434,7 @@ contract PolyConnectorLogic is
             )
         {
             emit NewSwapAndUnwrapRune(
+                arguments.uniqueCounter,
                 arguments.chainId,
                 arguments.user,
                 arguments.thirdPartyId,
@@ -456,6 +457,7 @@ contract PolyConnectorLogic is
             ][_tokenSent] = _amount;
 
             emit FailedSwapAndUnwrapRune(
+                arguments.uniqueCounter,
                 arguments.chainId,
                 arguments.user,
                 arguments.thirdPartyId,
