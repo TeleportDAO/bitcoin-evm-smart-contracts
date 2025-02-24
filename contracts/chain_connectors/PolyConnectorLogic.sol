@@ -270,6 +270,7 @@ contract PolyConnectorLogic is
         );
 
         emit RetriedSwapAndUnwrapRune(
+            arguments.uniqueCounter,
             arguments.chainId,
             arguments.user,
             arguments.thirdPartyId,
