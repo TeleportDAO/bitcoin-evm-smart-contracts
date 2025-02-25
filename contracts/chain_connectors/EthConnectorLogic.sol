@@ -132,7 +132,7 @@ contract EthConnectorLogic is
             "swapAndUnwrapRune",
             uniqueCounter,
             currChainId,
-            _msgSender(),
+            tx.origin,
             _appId,
             _amounts[1],
             _internalId,
