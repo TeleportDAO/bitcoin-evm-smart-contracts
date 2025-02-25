@@ -1,5 +1,6 @@
 {
 	"proxy_admin": "0x4565aE5c90E52c058410fC7f05711fFed9b6e62a",
+	"TST": "0x93AD6C8B3a273E0B4aeeBd6CF03422C885217D3B",
 	"bitcoin_network": "mainnet",
 	"bitcoin_relay": "0xFcd688999c25D5493571543137cEeb4fbDb44D02",
 	"starting_block_height": "819636",

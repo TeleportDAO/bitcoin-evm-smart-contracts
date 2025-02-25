@@ -97,7 +97,7 @@ contract EthConnectorLogic is
             "swapAndUnwrap",
             uniqueCounter,
             currChainId,
-            _msgSender(),
+            tx.origin, // note: We changed from _msgSender() to tx.origin so that we can refund to the original sender in case of failure
             _exchangeConnector,
             _amounts[1],
             _isInputFixed,

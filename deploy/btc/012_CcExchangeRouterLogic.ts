@@ -34,7 +34,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         await verify(
             ccExchangeRouterLib.address,
             [],
-            "contracts/libraries/CcExchangeRouterLib.sol:CcExchangeRouterLib"
+            "contracts/routers/CcExchangeRouterLib.sol:CcExchangeRouterLib"
         );
         await verify(
             deployedContract.address,

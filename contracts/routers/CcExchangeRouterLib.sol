@@ -6,7 +6,7 @@ import "@teleportdao/btc-evm-bridge/contracts/libraries/BitcoinHelper.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "../routers/interfaces/ICcExchangeRouter.sol";
-import "../libraries/RequestParser.sol";
+import "./RequestParser.sol";
 
 library CcExchangeRouterLib {
     /// @notice Parses and stores exchange request if it's valid

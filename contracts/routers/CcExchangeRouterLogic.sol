@@ -8,7 +8,7 @@ import "../dex_connectors/interfaces/IDexConnector.sol";
 import "../erc20/interfaces/ITeleBTC.sol";
 import "../erc20/WETH.sol";
 import "../lockersManager/interfaces/ILockersManager.sol";
-import "../libraries/CcExchangeRouterLib.sol";
+import "./CcExchangeRouterLib.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "solidity-bytes-utils/contracts/BytesLib.sol";

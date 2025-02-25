@@ -3,7 +3,7 @@ pragma solidity >=0.8.0 <=0.8.4;
 
 import "./CcTransferRouterStorage.sol";
 import "./CcTransferRouterStorageV2.sol";
-import "../libraries/RequestParser.sol";
+import "./RequestParser.sol";
 import "../lockersManager/interfaces/ILockersManager.sol";
 import "../erc20/interfaces/ITeleBTC.sol";
 import "@teleportdao/btc-evm-bridge/contracts/libraries/BitcoinHelper.sol";

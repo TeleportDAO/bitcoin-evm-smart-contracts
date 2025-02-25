@@ -33,7 +33,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         await verify(
             burnRouterLib.address,
             [],
-            "contracts/libraries/BurnRouterLib.sol:BurnRouterLib"
+            "contracts/routers/BurnRouterLib.sol:BurnRouterLib"
         );
         
         await verify(

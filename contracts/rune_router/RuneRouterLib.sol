@@ -144,7 +144,7 @@ library RuneRouterLib {
             } else {
                 require(request.chainId != 137, "RuneRouterLib: wrong chain id");
                 request.speed = _parseSpeed(requestData);
-                request.bridgeFee = _parseBridgeFee(requestData);
+                request.bridgeFee = uint(_parseBridgeFee(requestData)) * (10 ** 11);
             }
         }
 

@@ -30,7 +30,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         await verify(
             lockersManagerLib.address,
             [],
-            "contracts/libraries/LockersManagerLib.sol:LockersManagerLib"
+            "contracts/lockersManager/LockersManagerLib.sol:LockersManagerLib"
         );
         await verify(
             deployedContract.address,

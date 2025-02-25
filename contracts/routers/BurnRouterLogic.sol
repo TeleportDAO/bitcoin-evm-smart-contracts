@@ -4,7 +4,7 @@ pragma solidity >=0.8.0 <=0.8.4;
 import "../erc20/interfaces/IWETH.sol";
 import "../lockersManager/interfaces/ILockersManager.sol";
 import "../dex_connectors/interfaces/IDexConnector.sol";
-import "../libraries/BurnRouterLib.sol";
+import "./BurnRouterLib.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "./BurnRouterStorageV2.sol";

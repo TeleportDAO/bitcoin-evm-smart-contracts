@@ -5,7 +5,7 @@ import "./LockersManagerStorage.sol";
 import "./LockersManagerStorage2.sol";
 import "../erc20/interfaces/ITeleBTC.sol";
 import "../routers/interfaces/IBurnRouter.sol";
-import "../libraries/LockersManagerLib.sol";
+import "./LockersManagerLib.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
