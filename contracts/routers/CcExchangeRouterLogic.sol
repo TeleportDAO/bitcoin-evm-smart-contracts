@@ -601,30 +601,29 @@ contract CcExchangeRouterLogic is
                 true
             );
 
-        if (swapArguments.destinationChainId == chainId) {
-            address _outputToken = swapArguments._path[
-                swapArguments._path.length - 1
-            ];
-            uint256 _outputAmount = amounts[amounts.length - 1];
-            if (_outputToken != wrappedNativeToken) {
-                // Send swapped token to the user
-                ITeleBTC(_outputToken).transfer(
-                    swapArguments._ccExchangeRequest.recipientAddress,
-                    _outputAmount
-                );
-            } else {
-                // Unwrap the wrapped native token
-                WETH(wrappedNativeToken).withdraw(_outputAmount);
-                // Send native token to the user
-                Address.sendValue(
-                    payable(swapArguments._ccExchangeRequest.recipientAddress),
-                    _outputAmount
-                );
+        if (result) { // Successfull swap
+            if (swapArguments.destinationChainId == chainId) { // Send swapped token to the user for current chain requests
+                address _outputToken = swapArguments._path[
+                    swapArguments._path.length - 1
+                ];
+                uint256 _outputAmount = amounts[amounts.length - 1];
+                if (_outputToken != wrappedNativeToken) {
+                    // Send swapped token to the user
+                    ITeleBTC(_outputToken).transfer(
+                        swapArguments._ccExchangeRequest.recipientAddress,
+                        _outputAmount
+                    );
+                } else { 
+                    // Unwrap the wrapped native token
+                    WETH(wrappedNativeToken).withdraw(_outputAmount);
+                    // Send native token to the user
+                    Address.sendValue(
+                        payable(swapArguments._ccExchangeRequest.recipientAddress),
+                        _outputAmount
+                    );
+                }
             }
-        }
-
-        if (result) {
-            // Successfull swap
+            
             uint256 bridgeFee = (amounts[amounts.length - 1] *
                 swapArguments._extendedCcExchangeRequest.bridgeFee) /
                 MAX_BRIDGE_FEE;
@@ -652,8 +651,7 @@ contract CcExchangeRouterLogic is
                 fees,
                 swapArguments.destinationChainId
             );
-        } else {
-            // Failed swap
+        } else { // Failed swap
             uint256[5] memory fees = [
                 swapArguments._ccExchangeRequest.fee,
                 swapArguments._extendedCcExchangeRequest.lockerFee,
