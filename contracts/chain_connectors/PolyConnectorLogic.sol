@@ -74,6 +74,13 @@ contract PolyConnectorLogic is
         across = _across;
     }
 
+    /// @notice Setter for Retyer Admin
+    function setRetyerAdmin(
+        address _retryerAdmin
+    ) external onlyOwner {
+        retryerAdmin = _retryerAdmin;
+    }
+
     /// @notice Process requests coming from Ethereum (using Across V3)
     function handleV3AcrossMessage(
         address _tokenSent,

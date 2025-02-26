@@ -412,22 +412,6 @@ contract BurnRouterLogic is
         return true;
     }
 
-    function burnProofByOwner(
-        bytes32 _txId,
-        address _lockerTargetAddress,
-        uint256 _burnReqIndex,
-        uint256 _voutIndex
-    ) external nonReentrant onlyOwner {
-        emit PaidUnwrap(
-            _lockerTargetAddress,
-            burnRequests[_lockerTargetAddress][_burnReqIndex]
-                .requestIdOfLocker,
-            _txId,
-            _voutIndex
-        );
-        isUsedAsBurnProof[_txId] = true;
-    }
-
     /// @notice Slashes a locker if did not pay a cc burn request before its deadline
     /// @param _lockerLockingScript Locker's locking script that the unpaid request belongs to
     /// @param _indices Indices of requests that their deadline has passed
@@ -850,8 +834,8 @@ contract BurnRouterLogic is
 
         remainingAmount = _amount - _protocolFee - _thirdPartyFee - bitcoinFee;
 
-        // Note: to avoid dust amount, we require remainingAmount to be greater than networkFee
-        require(remainingAmount >= bitcoinFee, "BurnRouterLogic: low amount");
+        // Note: to avoid dust amount, we require remainingAmount to be greater than 1000
+        require(remainingAmount >= 1000, "BurnRouterLogic: low amount");
 
         // Send protocol fee
         if (_protocolFee > 0) {

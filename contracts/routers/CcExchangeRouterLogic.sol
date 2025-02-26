@@ -181,6 +181,13 @@ contract CcExchangeRouterLogic is
         isChainSupported[_chainId] = false;
     }
 
+    /// @notice Setter for Retyer Admin
+    function setRetyerAdmin(
+        address _retryerAdmin
+    ) external onlyOwner {
+        retryerAdmin = _retryerAdmin;
+    }
+
     /// @notice Check if a request has been processed
     /// @dev It prevents re-submitting a processed request
     /// @param _txId The transaction ID of request on Bitcoin
@@ -377,132 +384,47 @@ contract CcExchangeRouterLogic is
         );
     }
 
-    /// @notice Request BTC for failed exchange request
-    /// @dev Users can get their BTC back if the request execution failed
-    ///      and their request destination is different from the current chain
-    /// @param _message ABI encode of (txId, scriptType, userScript, acrossRelayerFee)
-    /// @param _r Signature r
-    /// @param _s Signature s
-    /// @param _v Signature v
-    /// @param _lockerLockingScript Script hash of locker that user has sent BTC to it
-    /// @return
-    function withdrawFailedWrapAndSwap(
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v,
+    function refundByOwnerOrAdmin(
+        bytes32 _txId,
+        uint8 _scriptType,
+        bytes memory _userScript,
         bytes calldata _lockerLockingScript
-    ) external override nonReentrant returns (bool) {
-        /* Check that:
-           1. Request doesn't belong to the current chain
-           2. Request execution has been failed
-        */
-
-        (bytes32 _txId, uint8 _scriptType, bytes memory _userScript, ) = abi
-            .decode(_message, (bytes32, uint8, bytes, uint256));
-
+    ) external override nonReentrant {
         require(
-            extendedCcExchangeRequests[_txId].chainId != chainId &&
-                extendedCcExchangeRequests[_txId].isTransferredToOtherChain ==
-                false,
+            msg.sender == retryerAdmin || msg.sender == owner(),
+            "ExchangeRouter: not authorized"
+        );
+
+        // Check that the request has not been completed
+        require(
+            extendedCcExchangeRequests[_txId].isRequestCompleted == false,
             "ExchangeRouter: already processed"
         );
-        extendedCcExchangeRequests[_txId].isTransferredToOtherChain = true;
+        extendedCcExchangeRequests[_txId].isRequestCompleted = true;
 
-        require(
-            CcExchangeRouterLib._verifySig(_message, _r, _s, _v) ==
-                ccExchangeRequests[_txId].recipientAddress,
-            "ExchangeRouter: invalid signer"
-        );
+        uint256 refundAmount = extendedCcExchangeRequests[_txId].remainedInputAmount;
 
         // Burns teleBTC for user
         ITeleBTC(teleBTC).approve(
             burnRouter,
-            extendedCcExchangeRequests[_txId].remainedInputAmount
+            refundAmount
         );
 
         IBurnRouter(burnRouter).unwrap(
-            extendedCcExchangeRequests[_txId].remainedInputAmount,
+            refundAmount,
             _userScript,
             ScriptTypes(_scriptType),
             _lockerLockingScript,
             0
         );
 
-        return true;
-    }
-
-    /// @notice Retry for failed exchange request
-    /// @dev Users can retry their failed exchange request if
-    ///      their request destination is different from the current chain
-    /// @param _message ABI encode of (txId, outputAmount, acrossRelayerFee, exchangePath)
-    /// @param _r Signature r
-    /// @param _s Signature s
-    /// @param _v Signature v
-    function retryFailedWrapAndSwap(
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v
-    ) external override nonReentrant returns (bool) {
-        (
-            bytes32 _txId,
-            uint256 _outputAmount,
-            uint256 _acrossRelayerFee,
-            address[] memory path,
-            bytes memory _lockerLockingScript
-        ) = abi.decode(_message, (bytes32, uint256, uint256, address[], bytes));
-        // Use new output amount provided by user
-        ccExchangeRequests[_txId].outputAmount = _outputAmount;
-
-        // Load request and extended request to save gas
-        ccExchangeRequest memory exchangeReq = ccExchangeRequests[_txId];
-        extendedCcExchangeRequest
-            memory extendedReq = extendedCcExchangeRequests[_txId];
-
-        /* Check that:
-           1. Request doesn't belong to the current chain
-           2. Request execution has been failed
-        */
-        require(
-            extendedReq.chainId != chainId &&
-                extendedReq.isTransferredToOtherChain == false,
-            "ExchangeRouter: already processed"
+        emit RefundProcessed(
+            _txId,
+            msg.sender,
+            refundAmount,
+            _userScript,
+            _scriptType
         );
-        extendedCcExchangeRequests[_txId].isTransferredToOtherChain = true;
-
-        // Check the signer to be same as the recipient address
-        require(
-            CcExchangeRouterLib._verifySig(_message, _r, _s, _v) ==
-                exchangeReq.recipientAddress,
-            "ExchangeRouter: invalid signer"
-        );
-
-        // Swap TeleBTC for the desired token
-        (bool result, uint256[] memory amounts) = _swap(
-            ICcExchangeRouter.swapArguments(
-                extendedReq.chainId,
-                _lockerLockingScript,
-                exchangeReq,
-                extendedReq,
-                _txId,
-                path,
-                exchangeConnector[exchangeReq.appId]
-            )
-        );
-
-        require(result, "ExchangeRouter: swap failed");
-
-        // Send exchanged tokens to the destination chain
-        _sendTokenToOtherChain(
-            extendedCcExchangeRequests[_txId].chainId,
-            path[path.length - 1],
-            amounts[amounts.length - 1],
-            exchangeReq.recipientAddress,
-            _acrossRelayerFee
-        );
-
-        return true;
     }
 
     /// @notice Emergency withdraw tokens from contract
@@ -605,13 +527,10 @@ contract CcExchangeRouterLogic is
             )
         );
 
-        if (!result) {
-            // Sends teleBTC to recipient if exchange wasn't successful
-            ITeleBTC(teleBTC).transfer(
-                ccExchangeRequests[_txId].recipientAddress,
-                extendedCcExchangeRequests[_txId].remainedInputAmount
-            );
+        if (result) {
+            extendedCcExchangeRequests[_txId].isRequestCompleted = true;
         }
+        // If swap failed, keep TeleBTC in the contract for retry
     }
 
     /// @notice Internal function for request belonging chains other than the current chain
@@ -637,7 +556,7 @@ contract CcExchangeRouterLogic is
 
         if (result) {
             // If swap was successfull, user will get tokens on destination chain
-            extendedCcExchangeRequests[_txId].isTransferredToOtherChain = true;
+            extendedCcExchangeRequests[_txId].isRequestCompleted = true;
 
             _sendTokenToOtherChain(
                 extendedCcExchangeRequests[_txId].chainId,

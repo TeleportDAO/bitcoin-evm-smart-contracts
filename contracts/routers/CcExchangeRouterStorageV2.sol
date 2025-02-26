@@ -45,4 +45,6 @@ abstract contract CcExchangeRouterStorageV2 is ICcExchangeRouter {
         public fillerAddress;
     // ^ [txId][recipient][token][amount][chainId] to filler address
     uint constant REGULAR_SLIPPAGE = 1500;
+
+    address public retryerAdmin;
 }

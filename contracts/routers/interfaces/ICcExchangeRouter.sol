@@ -36,12 +36,12 @@ interface ICcExchangeRouter {
     }
 
     /// @notice Structure for recording cross-chain exchange requests
-    /// @param isTransferredToOtherChain True if BTC to ETH exchange is processed successfully
+    /// @param isRequestCompleted True if BTC to ETH exchange is processed successfully
     /// @param remainedInputAmount Amount of obtained TELEBTC on target chain
     /// @param bridgeFee percentage of fee we have to give to across relayers to fill our request
     struct extendedCcExchangeRequest {
         uint chainId;
-        bool isTransferredToOtherChain;
+        bool isRequestCompleted;
         uint remainedInputAmount;
         uint bridgeFee;
         uint thirdParty;
@@ -240,6 +240,15 @@ interface ICcExchangeRouter {
         uint destinationChainId
     );
 
+    // Add event declaration at contract level
+    event RefundProcessed(
+        bytes32 indexed txId,
+        address indexed refundedBy,
+        uint256 amount,
+        bytes userScript,
+        uint8 scriptType
+    );
+
     /// @notice Emits when appId for an exchange connector is set
     /// @param appId Assigned application id to exchange
     /// @param exchangeConnector Address of exchange connector contract
@@ -396,18 +405,10 @@ interface ICcExchangeRouter {
 
     function removeChain(uint _chainId) external;
 
-    function withdrawFailedWrapAndSwap(
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v,
+    function refundByOwnerOrAdmin(
+        bytes32 _txId,
+        uint8 _scriptType,
+        bytes memory _userScript,
         bytes calldata _lockerLockingScript
-    ) external returns (bool);
-
-    function retryFailedWrapAndSwap(
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v
-    ) external returns (bool);
+    ) external;
 }
