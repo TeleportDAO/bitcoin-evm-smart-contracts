@@ -209,4 +209,12 @@ interface IPolyConnector {
         address _to,
         uint256 _amount
     ) external;
+
+    function withdrawFundsToSourceChainByOwnerOrAdmin(
+        address _user,
+        uint256 _chainId,
+        uint256 _uniqueCounter,
+        address _token,
+        int64 _relayerFeePercentage
+    ) external;
 }

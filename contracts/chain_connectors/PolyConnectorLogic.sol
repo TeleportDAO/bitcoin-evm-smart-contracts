@@ -298,13 +298,18 @@ contract PolyConnectorLogic is
 
     /// @notice Send back tokens to the source chain by owner
     /// @dev Owner can only set the relayer fee percentage
-    function withdrawFundsToSourceChainByOwner(
+    function withdrawFundsToSourceChainByOwnerOrAdmin(
         address _user,
         uint256 _chainId,
         uint256 _uniqueCounter,
         address _token,
         int64 _relayerFeePercentage
-    ) external nonReentrant onlyOwner {
+    ) external override nonReentrant {
+        require(
+            msg.sender == retryerAdmin || msg.sender == owner(),
+            "PolygonConnectorLogic: not authorized"
+        );
+
         uint256 _amount = newFailedReqs[_user][_chainId][_uniqueCounter][
             _token
         ];
