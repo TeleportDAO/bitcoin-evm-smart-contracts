@@ -240,13 +240,16 @@ interface ICcExchangeRouter {
         uint destinationChainId
     );
 
-    // Add event declaration at contract level
+    /// @notice Emits when a failed request is refunded
     event RefundProcessed(
         bytes32 indexed txId,
         address indexed refundedBy,
-        uint256 amount,
+        uint256 failedRequestAmount,
+        uint256 refundAmount,   
         bytes userScript,
-        uint8 scriptType
+        uint8 scriptType,
+        address lockerTargetAddress,
+        uint256 burnRequestCounter
     );
 
     /// @notice Emits when appId for an exchange connector is set

@@ -38,4 +38,6 @@ abstract contract RuneRouterStorage is IRuneRouter {
     // In this contract each locker address can be used for one reward token
     
     address public across;
+
+    address public retryerAdmin;
 }

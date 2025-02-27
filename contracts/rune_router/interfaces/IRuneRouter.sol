@@ -21,7 +21,7 @@ interface IRuneRouter {
         address outputToken;
         uint bridgeFee;
         bool speed;
-        bool isTransferredToOtherChain;
+        bool isRequestCompleted;
     }
 
     /// @notice Structure for recording unwrap and swap&unwrap requests
@@ -44,6 +44,17 @@ interface IRuneRouter {
         uint protocolFee;
         uint lockerFee;
         uint thirdPartyFee;
+    }
+
+    /// @notice Struct to hold wrap and swap parameters to avoid stack too deep errors
+    struct WrapAndSwapParams {
+        runeWrapRequest request;
+        bytes32 txId;
+        uint256 remainingAmount;
+        address wrappedRune;
+        fees fee;
+        address thirdPartyAddress;
+        address[] path;
     }
 
     // Events
@@ -100,18 +111,6 @@ interface IRuneRouter {
     );
 
     /// @notice Emit when a wrap&swap request is processed
-    event NewRuneWrapAndSwap(
-        address user,
-        uint remainingAmount,
-        address inputToken,
-        uint outputAmount,
-        address outputToken,
-        fees fee,
-        address thirdPartyAddress,
-        bytes32 txId
-    );
-
-    /// @notice Emit when a wrap&swap request is processed
     event NewRuneWrapAndSwapV2(
         address user,
         uint remainingAmount,
@@ -140,17 +139,15 @@ interface IRuneRouter {
         uint chainId
     );
 
-    event RetriedFailedWrapAndSwap(
-        uint256 outputAmount,
-        uint256 bridgeFee,
-        bytes32 txId
-    );
-
-    event WithdrawnFailedWrapAndSwap(
-        uint256 outputAmount,
+    /// @notice Emit when a refund is processed
+    event RefundProcessed(
+        bytes32 indexed txId,
+        address indexed refundedBy,
+        uint256 failedRequestAmount,
+        uint256 refundAmount,
         bytes userScript,
-        ScriptTypes scriptType,
-        bytes32 txId
+        uint8 scriptType,
+        uint reqIdx
     );
 
     /// @notice Emit when a unwrap request is processed
@@ -310,17 +307,9 @@ interface IRuneRouter {
         address[] memory _path
     ) external payable returns (uint256 _remainingAmount);
 
-    function retryFailedWrapAndSwap(
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v
-    ) external;
-
-    function withdrawFailedWrapAndSwap(
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v
+    function refundByOwnerOrAdmin(
+        bytes32 _txId,
+        uint8 _scriptType,
+        bytes memory _userScript
     ) external;
 }

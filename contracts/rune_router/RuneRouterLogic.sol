@@ -202,6 +202,11 @@ contract RuneRouterLogic is
         across = _across;
     }
 
+    /// @notice Setter for Retyer Admin
+    function setRetyerAdmin(address _retryerAdmin) external onlyOwner {
+        retryerAdmin = _retryerAdmin;
+    }
+
     /// @notice Deploy wrapped Rune token contract
     /// @dev We assign tokenId to a supported Rune
     /// @param _runeId Real rune id
@@ -257,6 +262,85 @@ contract RuneRouterLogic is
         delete supportedRunes[_internalId];
     }
 
+    /// @notice Internal function to handle wrap and swap operations
+    /// @dev Called when processing a wrap request that includes a swap
+    function _wrapAndSwap(WrapAndSwapParams memory params) internal {
+        // Check exchange path provided by teleporter
+        require(
+            params.path[0] == params.request.inputToken &&
+                params.path[params.path.length - 1] ==
+                params.request.outputToken,
+            "Router: wrong path"
+        );
+
+        // Swapped tokens are sent to the contract
+        (bool result, uint256 outputAmount) = _swap(
+            params.request.appId,
+            address(this),
+            params.remainingAmount,
+            params.request.outputAmount,
+            params.path
+        );
+
+        if (result) {
+            // Swap successful
+            runeWrapRequests[params.txId].isRequestCompleted = true;
+            emit NewRuneWrapAndSwapV2(
+                params.request.recipientAddress,
+                params.remainingAmount,
+                params.wrappedRune,
+                outputAmount,
+                params.request.outputToken,
+                params.fee,
+                params.thirdPartyAddress,
+                params.txId,
+                params.request.speed,
+                params.request.chainId,
+                params.request.bridgeFee
+            );
+            // Distribute fees only if the swap is successful
+            _distributeFees(
+                params.fee,
+                params.wrappedRune,
+                params.thirdPartyAddress
+            );
+
+            if (params.request.chainId == chainId) {
+                // Destination chain == the current chain
+                // Transfer exchanged tokens directly to user
+                IRune(params.request.outputToken).transfer(
+                    params.request.recipientAddress,
+                    outputAmount
+                );
+            } else {
+                // Destination chain != the current chain
+                // Transfer exchanged tokens to user on the destination chain using Across
+                _sendTokenToOtherChain(
+                    params.request.chainId,
+                    params.request.outputToken,
+                    outputAmount,
+                    params.request.recipientAddress,
+                    params.request.bridgeFee
+                );
+            }
+        } else {
+            // Swap failed
+            // Note: In the case of swap failure, the contract keeps the wrapped rune tokens
+            emit FailedRuneWrapAndSwap(
+                params.request.recipientAddress,
+                params.request.inputAmount,
+                params.wrappedRune,
+                params.request.outputAmount,
+                params.request.outputToken,
+                fees(0, 0, 0), // zero fee
+                params.thirdPartyAddress,
+                params.txId,
+                params.request.speed,
+                params.request.chainId
+            );
+        }
+    }
+
     /// @notice Process wrap Rune request
     /// @dev Locker submits wrap requests to this function for:
     ///      1) Checking tx inclusion
@@ -280,15 +364,10 @@ contract RuneRouterLogic is
         uint _index,
         address[] memory _path
     ) external payable override nonReentrant {
-        // TODO: Remove this
-        address tempTeleporter = 0x4a00edf7F07Ecb48a4A3FD798e0fb79D90ef21a9;
+        // Only teleporter can call this function
+        require(_msgSender() == teleporter, "Router: not teleporter");
 
-        require(
-            _msgSender() == teleporter || _msgSender() == tempTeleporter,
-            "Router: not teleporter"
-        );
-
-        // Find txId and check its inclusion
+        // Find txId and check tx inclusion on Bitcoin
         bytes32 txId = RuneRouterLib.checkTx(
             startingBlockNumber,
             relay,
@@ -322,11 +401,14 @@ contract RuneRouterLogic is
         // Mint total amount of wrapped tokens
         IRune(wrappedRune).mint(address(this), request.inputAmount);
 
-        // Distribute fees
-        _distributeFees(fee, wrappedRune, _thirdPartyAddress);
-
         if (request.appId == 0) {
-            // This is a wrap request
+            // This is a wrap request (which cannot fail)
+            // Distribute fees
+            _distributeFees(fee, wrappedRune, _thirdPartyAddress);
+
+            // Mark request as completed
+            runeWrapRequests[txId].isRequestCompleted = true;
+
             // Transfer wrapped tokens to user
             IRune(wrappedRune).transfer(
                 request.recipientAddress,
@@ -342,94 +424,17 @@ contract RuneRouterLogic is
                 txId
             );
         } else {
-            // This is wrap & sw request
-            // Check exchange path provided by teleporter
-            require(
-                _path[0] == request.inputToken &&
-                    _path[_path.length - 1] == request.outputToken,
-                "Router: wrong path"
+            _wrapAndSwap(
+                WrapAndSwapParams({
+                    request: request,
+                    txId: txId,
+                    remainingAmount: remainingAmount,
+                    wrappedRune: wrappedRune,
+                    fee: fee,
+                    thirdPartyAddress: _thirdPartyAddress,
+                    path: _path
+                })
             );
-
-            // Swapped tokens are sent to the contract
-            (bool result, uint256 outputAmount) = _swap(
-                request.appId,
-                address(this),
-                remainingAmount,
-                request.outputAmount,
-                _path
-            );
-
-            if (result) {
-                // Swap successful
-                if (request.chainId == chainId) {
-                    // Destination chain == the current chain
-                    emit NewRuneWrapAndSwap(
-                        request.recipientAddress,
-                        remainingAmount,
-                        wrappedRune,
-                        outputAmount,
-                        request.outputToken,
-                        fee,
-                        _thirdPartyAddress,
-                        txId
-                    );
-                    // Transfer exchanged tokens directly to user
-                    IRune(request.outputToken).transfer(
-                        request.recipientAddress,
-                        outputAmount
-                    );
-                } else {
-                    // Destination chain != the current chain
-                    emit NewRuneWrapAndSwapV2(
-                        request.recipientAddress,
-                        remainingAmount, // Input amount
-                        wrappedRune,
-                        outputAmount,
-                        request.outputToken,
-                        fee,
-                        _thirdPartyAddress,
-                        txId,
-                        request.speed,
-                        request.chainId,
-                        request.bridgeFee
-                    );
-                    // Transfer exchanged tokens to user on the destination chain using Across
-                    runeWrapRequests[txId].isTransferredToOtherChain = true;
-                    _sendTokenToOtherChain(
-                        request.chainId,
-                        request.outputToken,
-                        outputAmount,
-                        request.recipientAddress,
-                        request.bridgeFee
-                    );
-                }
-            } else {
-                // Swap failed
-                emit FailedRuneWrapAndSwap(
-                    request.recipientAddress,
-                    remainingAmount,
-                    wrappedRune,
-                    request.outputAmount,
-                    request.outputToken,
-                    fee,
-                    _thirdPartyAddress,
-                    txId,
-                    request.speed,
-                    request.chainId
-                );
-                if (request.chainId == chainId) {
-                    // Transfer wrapped tokens to user
-                    IRune(wrappedRune).transfer(
-                        request.recipientAddress,
-                        remainingAmount
-                    );
-                } else {
-                    // Request belongs to another chain
-                    // Contract keeps the wrapped rune tokens
-                    // Update input amount to remaining amount
-                    runeWrapRequests[txId].inputAmount = remainingAmount;
-                }
-            }
         }
     }
 
@@ -588,99 +593,34 @@ contract RuneRouterLogic is
         }
     }
 
-    /// @notice Retry for failed exchange request
-    /// @dev Users can retry their failed exchange request if
-    /// their request destination is different from the current chain
-    /// @param _message ABI encode of (txId, outputAmount, acrossRelayerFee, exchangePath)
-    /// @param _r Signature r
-    /// @param _s Signature s
-    /// @param _v Signature v
-    function retryFailedWrapAndSwap(
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v
+    function refundByOwnerOrAdmin(
+        bytes32 _txId,
+        uint8 _scriptType,
+        bytes memory _userScript
     ) external override nonReentrant {
-        (
-            bytes32 _txId,
-            uint256 _newOutputAmount,
-            uint256 _newBridgeFee,
-            address[] memory _path
-        ) = abi.decode(_message, (bytes32, uint256, uint256, address[]));
-
-        RuneRouterLib.processFailedRequest(
-            runeWrapRequests,
-            _txId,
-            _message,
-            _r,
-            _s,
-            _v,
-            chainId
+        require(
+            msg.sender == retryerAdmin || msg.sender == owner(),
+            "ExchangeRouter: not authorized"
         );
 
-        runeWrapRequest memory request = runeWrapRequests[_txId];
-
-        // Exchange wrapped Rune for the desired token
-        (bool result, uint256 _outputAmount) = _swap(
-            request.appId, // Use the same appId as the original request
-            address(this), // Send to the contract
-            request.inputAmount, // This was the remaining amount from the original request
-            _newOutputAmount,
-            _path
+        require(
+            !runeWrapRequests[_txId].isRequestCompleted,
+            "RuneRouterLogic: already processed"
         );
 
-        require(result, "Router: swap failed");
-
-        // Retry is only possible if the request destination was different from the current chain
-        // Send exchanged tokens to the destination chain
-        _sendTokenToOtherChain(
-            request.chainId,
-            request.outputToken,
-            _outputAmount,
-            request.recipientAddress,
-            _newBridgeFee
-        );
-
-        emit RetriedFailedWrapAndSwap(_outputAmount, _newBridgeFee, _txId);
-    }
-
-    /// @notice Request withdraw for failed exchange request
-    /// @dev Users can get their Rune back if the request execution failed and
-    ///      their request destination is different from the current chain
-    /// @param _message ABI encode of (txId, scriptType, userScript)
-    /// @param _r Signature r
-    /// @param _s Signature s
-    /// @param _v Signature v
-    function withdrawFailedWrapAndSwap(
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v
-    ) external override nonReentrant {
-        (bytes32 _txId, uint8 _scriptType, bytes memory _userScript) = abi
-            .decode(_message, (bytes32, uint8, bytes));
-
-        RuneRouterLib.processFailedRequest(
-            runeWrapRequests,
-            _txId,
-            _message,
-            _r,
-            _s,
-            _v,
-            chainId
-        );
+        uint256 failedRequestAmount = runeWrapRequests[_txId].inputAmount;
 
         // Approve for unwrap (the contract approves to itself
         IRune(runeWrapRequests[_txId].inputToken).approve(
             address(this),
-            runeWrapRequests[_txId].inputAmount
+            failedRequestAmount
         );
 
         // Unwrap wrapped Rune
-        uint256 _remainingAmount = unwrapRune(
+        uint256 refundAmount = unwrapRune(
             0,
             internalIds[runeWrapRequests[_txId].inputToken],
-            runeWrapRequests[_txId].inputAmount, // This was the remaining amount from the original request
+            failedRequestAmount,
             _userScript,
             ScriptTypes(_scriptType),
             0, // This is a unwrap request
@@ -688,11 +628,14 @@ contract RuneRouterLogic is
             new address[](0)
         );
 
-        emit WithdrawnFailedWrapAndSwap(
-            _remainingAmount,
+        emit RefundProcessed(
+            _txId,
+            msg.sender,
+            failedRequestAmount,
+            refundAmount,
             _userScript,
-            ScriptTypes(_scriptType),
-            _txId
+            _scriptType,
+            runeUnwrapRequests.length - 1
         );
     }
 
@@ -801,7 +744,8 @@ contract RuneRouterLogic is
             true // Input amount is fixed
         );
 
-        if (_result) { // If swap is successful
+        if (_result) {
+            // If swap is successful
             _finalOutputAmount = _amounts[_amounts.length - 1];
         }
         // If swap is not successful, return 0

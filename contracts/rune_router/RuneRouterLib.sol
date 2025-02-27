@@ -79,7 +79,8 @@ library RuneRouterLib {
         RuneRouterStorage.runeWrapRequest memory request;
 
         (
-            , // Value
+            ,
+            // Value
             bytes memory requestData // OP_RETURN data
         ) = BitcoinHelper.parseValueAndDataHavingLockingScriptSmallPayload(
                 _vout,
@@ -89,17 +90,18 @@ library RuneRouterLib {
         // If small payload returned empty, try big payload
         if (requestData.length == 0) {
             (
-                , // Value
+                ,
+                // Value
                 requestData // OP_RETURN data
             ) = BitcoinHelper.parseValueAndDataHavingLockingScriptBigPayload(
-                    _vout,
-                    "0x"
-                );
+                _vout,
+                "0x"
+            );
         }
 
-        // 41 for wrap, 74 for old wrapAndSwap, 78 for new wrapAndSwap
+        // 41 for wrap, 78 for new wrapAndSwap
         require(
-            requestData.length == 41 || requestData.length == 74 || requestData.length == 78,
+            requestData.length == 41 || requestData.length == 78,
             "RuneRouterLib: invalid len"
         );
 
@@ -134,18 +136,15 @@ library RuneRouterLib {
 
         // Check app id for wrap and wrapAndSwap
         if (requestData.length == 41) {
+            // wrap request
             require(request.appId == 0, "RuneRouterLib: wrong app id");
         } else {
+            // wrapAndSwap request
             require(request.appId != 0, "RuneRouterLib: wrong app id");
             request.outputToken = _parseOutputToken(requestData);
             request.outputAmount = _parseOutputAmount(requestData);
-            if (requestData.length == 74) {
-                require(request.chainId == 137, "RuneRouterLib: wrong chain id");
-            } else {
-                require(request.chainId != 137, "RuneRouterLib: wrong chain id");
-                request.speed = _parseSpeed(requestData);
-                request.bridgeFee = uint(_parseBridgeFee(requestData)) * (10 ** 11);
-            }
+            request.speed = _parseSpeed(requestData);
+            request.bridgeFee = uint(_parseBridgeFee(requestData)) * (10 ** 11);
         }
 
         // Input amount must be greater than 0
@@ -232,57 +231,6 @@ library RuneRouterLib {
         request.userScript = _userScript;
         request.scriptType = _scriptType;
         _runeUnwrapRequests.push(request);
-    }
-
-    function processFailedRequest(
-        mapping(bytes32 => RuneRouterStorage.runeWrapRequest)
-            storage _runeWrapRequests,
-        bytes32 _txId,
-        bytes memory _message,
-        bytes32 _r,
-        bytes32 _s,
-        uint8 _v,
-        uint _chainId
-    ) external {
-        // Check if the request is not processed & not transferred to the destination chain
-        require(
-            _runeWrapRequests[_txId].chainId != _chainId &&
-                !_runeWrapRequests[_txId].isTransferredToOtherChain,
-            "RuneRouterLogic: already processed"
-        );
-
-        // Verify signer is the original recipient
-        require(
-            verifySig(_message, _r, _s, _v) ==
-                _runeWrapRequests[_txId].recipientAddress,
-            "RuneRouterLogic: invalid signer"
-        );
-
-        // Mark the request as processed
-        _runeWrapRequests[_txId].isTransferredToOtherChain = true;
-    }
-
-    /// @notice Verifies the signature of _msgHash
-    /// @return _signer Address of message signer (if signature is valid)
-    function verifySig(
-        bytes memory message,
-        bytes32 r,
-        bytes32 s,
-        uint8 v
-    ) private pure returns (address) {
-        // Compute the message hash
-        bytes32 messageHash = keccak256(message);
-
-        // Prefix the message hash as per the Ethereum signing standard
-        bytes32 ethSignedMessageHash = keccak256(
-            abi.encodePacked("\x19Ethereum Signed Message:\n32", messageHash)
-        );
-
-        // Verify the message using ecrecover
-        address signer = ecrecover(ethSignedMessageHash, v, r, s);
-        require(signer != address(0), "RuneRouterLogic: Invalid sig");
-
-        return signer;
     }
 
     /// @notice Return chain id of the request

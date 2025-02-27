@@ -9,6 +9,7 @@ import "../erc20/interfaces/ITeleBTC.sol";
 import "../erc20/WETH.sol";
 import "../lockersManager/interfaces/ILockersManager.sol";
 import "./CcExchangeRouterLib.sol";
+import "../routers/BurnRouterStorage.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "solidity-bytes-utils/contracts/BytesLib.sol";
@@ -370,6 +371,8 @@ contract CcExchangeRouterLogic is
         bytes memory _userScript,
         bytes calldata _lockerLockingScript
     ) external override nonReentrant {
+        // TODO: Make it trustless. Store the outpoint of the failed tx,
+        //      so we can find the script type and user script in the future having the tx
         require(
             msg.sender == retryerAdmin || msg.sender == owner(),
             "ExchangeRouter: not authorized"
@@ -382,14 +385,17 @@ contract CcExchangeRouterLogic is
         );
         extendedCcExchangeRequests[_txId].isRequestCompleted = true;
 
-        uint256 refundAmount = extendedCcExchangeRequests[_txId]
+        uint256 failedRequestAmount = extendedCcExchangeRequests[_txId]
             .remainedInputAmount;
 
         // Burns teleBTC for user
-        ITeleBTC(teleBTC).approve(burnRouter, refundAmount);
+        ITeleBTC(teleBTC).approve(burnRouter, failedRequestAmount);
 
-        IBurnRouter(burnRouter).unwrap(
-            refundAmount,
+        address lockerTargetAddress = ILockersManager(lockers)
+            .getLockerTargetAddress(_lockerLockingScript);
+
+        uint256 refundAmount = IBurnRouter(burnRouter).unwrap(
+            failedRequestAmount,
             _userScript,
             ScriptTypes(_scriptType),
             _lockerLockingScript,
@@ -399,9 +405,14 @@ contract CcExchangeRouterLogic is
         emit RefundProcessed(
             _txId,
             msg.sender,
+            failedRequestAmount,
             refundAmount,
             _userScript,
-            _scriptType
+            _scriptType,
+            lockerTargetAddress,
+            BurnRouterStorage(burnRouter).burnRequestCounter(
+                lockerTargetAddress
+            ) - 1
         );
     }
 
@@ -536,7 +547,8 @@ contract CcExchangeRouterLogic is
                 );
             }
 
-            if (_chainId != chainId) { // If the destination chain is not the current chain
+            if (_chainId != chainId) {
+                // If the destination chain is not the current chain
                 _sendTokenToOtherChain(
                     extendedCcExchangeRequests[_txId].chainId,
                     _path[_path.length - 1],
@@ -545,7 +557,8 @@ contract CcExchangeRouterLogic is
                     _acrossRelayerFee
                 );
             }
-        } else { // If swap failed, keep TeleBTC in the contract for retry
+        } else {
+            // If swap failed, keep TeleBTC in the contract for retry
             uint fees = extendedCcExchangeRequests[_txId].thirdPartyFee +
                 extendedCcExchangeRequests[_txId].protocolFee +
                 ccExchangeRequests[_txId].fee;
