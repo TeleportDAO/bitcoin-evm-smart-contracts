@@ -182,9 +182,7 @@ contract CcExchangeRouterLogic is
     }
 
     /// @notice Setter for Retyer Admin
-    function setRetyerAdmin(
-        address _retryerAdmin
-    ) external onlyOwner {
+    function setRetyerAdmin(address _retryerAdmin) external onlyOwner {
         retryerAdmin = _retryerAdmin;
     }
 
@@ -297,32 +295,14 @@ contract CcExchangeRouterLogic is
             }
         }
 
-        if (destinationChainId == chainId) {
-            // Requests that belongs to the current chain
-            require(
-                extendedCcExchangeRequests[txId].bridgeFee == 0,
-                "ExchangeRouter: invalid bridge fee"
-            );
-
-            // Swap and send to the user
-            _wrapAndSwap(_exchangeConnector, _lockerLockingScript, txId, _path);
-        } else {
-            // Requests that belongs to the other chain
-            require(
-                isChainSupported[destinationChainId],
-                "ExchangeRouter: invalid chain id"
-            );
-
-            // Swap and then send to the destination chain
-            _wrapAndSwapToOtherChain(
-                _exchangeConnector,
-                _lockerLockingScript,
-                txId,
-                _path,
-                extendedCcExchangeRequests[txId].bridgeFee,
-                destinationChainId
-            );
-        }
+        _wrapAndSwap(
+            _exchangeConnector,
+            _lockerLockingScript,
+            txId,
+            _path,
+            extendedCcExchangeRequests[txId].bridgeFee,
+            destinationChainId
+        );
 
         return true;
     }
@@ -402,13 +382,11 @@ contract CcExchangeRouterLogic is
         );
         extendedCcExchangeRequests[_txId].isRequestCompleted = true;
 
-        uint256 refundAmount = extendedCcExchangeRequests[_txId].remainedInputAmount;
+        uint256 refundAmount = extendedCcExchangeRequests[_txId]
+            .remainedInputAmount;
 
         // Burns teleBTC for user
-        ITeleBTC(teleBTC).approve(
-            burnRouter,
-            refundAmount
-        );
+        ITeleBTC(teleBTC).approve(burnRouter, refundAmount);
 
         IBurnRouter(burnRouter).unwrap(
             refundAmount,
@@ -507,34 +485,7 @@ contract CcExchangeRouterLogic is
         );
     }
 
-    /// @notice Internal function for request belonging to the current chain
     function _wrapAndSwap(
-        address _exchangeConnector,
-        bytes memory _lockerLockingScript,
-        bytes32 _txId,
-        address[] memory _path
-    ) internal {
-        // try swapping with path provided by teleporter
-        (bool result, ) = _swap(
-            ICcExchangeRouter.swapArguments(
-                chainId,
-                _lockerLockingScript,
-                ccExchangeRequests[_txId],
-                extendedCcExchangeRequests[_txId],
-                _txId,
-                _path,
-                _exchangeConnector
-            )
-        );
-
-        if (result) {
-            extendedCcExchangeRequests[_txId].isRequestCompleted = true;
-        }
-        // If swap failed, keep TeleBTC in the contract for retry
-    }
-
-    /// @notice Internal function for request belonging chains other than the current chain
-    function _wrapAndSwapToOtherChain(
         address _exchangeConnector,
         bytes memory _lockerLockingScript,
         bytes32 _txId,
@@ -558,15 +509,50 @@ contract CcExchangeRouterLogic is
             // If swap was successfull, user will get tokens on destination chain
             extendedCcExchangeRequests[_txId].isRequestCompleted = true;
 
-            _sendTokenToOtherChain(
-                extendedCcExchangeRequests[_txId].chainId,
-                _path[_path.length - 1],
-                amounts[amounts.length - 1],
-                ccExchangeRequests[_txId].recipientAddress,
-                _acrossRelayerFee
-            );
+            /* 
+            Send fees:
+                1. Teleporter fee (network fee)
+                2. Protocol fee
+                3. Third party fee
+            */
+            if (ccExchangeRequests[_txId].fee > 0) {
+                ITeleBTC(teleBTC).transfer(
+                    _msgSender(),
+                    ccExchangeRequests[_txId].fee
+                );
+            }
+            if (extendedCcExchangeRequests[_txId].protocolFee > 0) {
+                ITeleBTC(teleBTC).transfer(
+                    treasury,
+                    extendedCcExchangeRequests[_txId].protocolFee
+                );
+            }
+            if (extendedCcExchangeRequests[_txId].thirdPartyFee > 0) {
+                ITeleBTC(teleBTC).transfer(
+                    thirdPartyAddress[
+                        extendedCcExchangeRequests[_txId].thirdParty
+                    ],
+                    extendedCcExchangeRequests[_txId].thirdPartyFee
+                );
+            }
+
+            if (_chainId != chainId) { // If the destination chain is not the current chain
+                _sendTokenToOtherChain(
+                    extendedCcExchangeRequests[_txId].chainId,
+                    _path[_path.length - 1],
+                    amounts[amounts.length - 1],
+                    ccExchangeRequests[_txId].recipientAddress,
+                    _acrossRelayerFee
+                );
+            }
+        } else { // If swap failed, keep TeleBTC in the contract for retry
+            uint fees = extendedCcExchangeRequests[_txId].thirdPartyFee +
+                extendedCcExchangeRequests[_txId].protocolFee +
+                ccExchangeRequests[_txId].fee;
+
+            // We don't take fees (except the locker fee) in the case of failed wrapAndSwap
+            extendedCcExchangeRequests[_txId].remainedInputAmount += fees;
         }
-        // If swap failed, keep TeleBTC in the contract for retry
     }
 
     /// @notice Swap TeleBTC for the output token
@@ -601,8 +587,10 @@ contract CcExchangeRouterLogic is
                 true
             );
 
-        if (result) { // Successfull swap
-            if (swapArguments.destinationChainId == chainId) { // Send swapped token to the user for current chain requests
+        if (result) {
+            // Successfull swap
+            if (swapArguments.destinationChainId == chainId) {
+                // Send swapped token to the user for current chain requests
                 address _outputToken = swapArguments._path[
                     swapArguments._path.length - 1
                 ];
@@ -613,17 +601,19 @@ contract CcExchangeRouterLogic is
                         swapArguments._ccExchangeRequest.recipientAddress,
                         _outputAmount
                     );
-                } else { 
+                } else {
                     // Unwrap the wrapped native token
                     WETH(wrappedNativeToken).withdraw(_outputAmount);
                     // Send native token to the user
                     Address.sendValue(
-                        payable(swapArguments._ccExchangeRequest.recipientAddress),
+                        payable(
+                            swapArguments._ccExchangeRequest.recipientAddress
+                        ),
                         _outputAmount
                     );
                 }
             }
-            
+
             uint256 bridgeFee = (amounts[amounts.length - 1] *
                 swapArguments._extendedCcExchangeRequest.bridgeFee) /
                 MAX_BRIDGE_FEE;
@@ -651,12 +641,13 @@ contract CcExchangeRouterLogic is
                 fees,
                 swapArguments.destinationChainId
             );
-        } else { // Failed swap
+        } else {
+            // Failed swap
             uint256[5] memory fees = [
-                swapArguments._ccExchangeRequest.fee,
+                0,
                 swapArguments._extendedCcExchangeRequest.lockerFee,
-                swapArguments._extendedCcExchangeRequest.protocolFee,
-                swapArguments._extendedCcExchangeRequest.thirdPartyFee,
+                0,
+                0,
                 0
             ];
             emit FailedWrapAndSwap(
@@ -708,27 +699,6 @@ contract CcExchangeRouterLogic is
         extendedCcExchangeRequests[_txId].lockerFee =
             ccExchangeRequests[_txId].inputAmount -
             mintedAmount;
-
-        // Pays Teleporter fee
-        if (networkFee > 0) {
-            ITeleBTC(teleBTC).transfer(_msgSender(), networkFee);
-        }
-
-        // Pays protocol fee
-        if (extendedCcExchangeRequests[_txId].protocolFee > 0) {
-            ITeleBTC(teleBTC).transfer(
-                treasury,
-                extendedCcExchangeRequests[_txId].protocolFee
-            );
-        }
-
-        // Pays third party fee
-        if (extendedCcExchangeRequests[_txId].thirdPartyFee > 0) {
-            ITeleBTC(teleBTC).transfer(
-                thirdPartyAddress[extendedCcExchangeRequests[_txId].thirdParty],
-                extendedCcExchangeRequests[_txId].thirdPartyFee
-            );
-        }
 
         extendedCcExchangeRequests[_txId].remainedInputAmount =
             mintedAmount -
