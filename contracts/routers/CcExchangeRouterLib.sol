@@ -57,7 +57,6 @@ library CcExchangeRouterLib {
                is less than 10^15 and token decimal is 18 (> (10^18) * (10^18))
             9) bridgeFee, 3 byte: will be multiply by 10^11, 10^18 means 100%, so the minimum 
             amount of fee percentage is 10^-5%
-            
             TOTAL = 65 BYTE
         */
         require(arbitraryData.length == 65, "ExchangeRouterLib: invalid len");
@@ -98,10 +97,6 @@ library CcExchangeRouterLib {
 
         // Note: speed now determines using fillers to speed up filling request (speed = 1) or not
         request.speed = RequestParser.parseSpeed(arbitraryData);
-        require(
-            request.speed == 0,
-            "ExchangeRouterLib: filler is not supported"
-        );
 
         request.isUsed = true;
 

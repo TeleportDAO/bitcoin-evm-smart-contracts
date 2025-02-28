@@ -1,7 +1,7 @@
 {
 	"name": "@teleportdao/teleswap-contracts",
 	"version": "1.1.0",
-	"description": "Trustless protocol for bridging and trading Bitcoin",
+	"description": "TeleSwap is a decentralized Bitcoin bridge that enables seamless bridging of BTC and Runes across blockchains.",
 	"license": "MIT",
 	"devDependencies": {
 		"@commitlint/cli": "^17.4.4",
@@ -9,7 +9,6 @@
 		"@nomicfoundation/hardhat-chai-matchers": "^1.0.5",
 		"@nomiclabs/hardhat-ethers": "^2.0.6",
 		"@nomiclabs/hardhat-etherscan": "^3.0.4",
-		"@nomiclabs/hardhat-waffle": "^2.0.3",
 		"@openzeppelin/hardhat-upgrades": "^1.12.0",
 		"@typechain/ethers-v5": "^7.2.0",
 		"@typechain/hardhat": "^2.3.1",
@@ -39,7 +38,7 @@
 		"prettier": "^2.6.2",
 		"prettier-plugin-solidity": "^1.0.0-beta.19",
 		"solhint": "^3.3.7",
-		"solidity-coverage": "^0.8.10",
+		"solidity-coverage": "^0.8.14",
 		"ts-node": "^10.8.1",
 		"typechain": "^5.2.0",
 		"typescript": "^4.7.3"
@@ -51,7 +50,6 @@
 		"@izumifinance/iziswap_periphery": "^1.0.1",
 		"@openzeppelin/contracts": "4.3.3",
 		"@openzeppelin/contracts-upgradeable": "^4.7.3",
-		"@remix-project/remixd": "^0.6.33",
 		"@teleportdao/btc-evm-bridge": "1.0.4",
 		"@uniswap/v2-core": "^1.0.1",
 		"@uniswap/v3-periphery": "^1.4.4",

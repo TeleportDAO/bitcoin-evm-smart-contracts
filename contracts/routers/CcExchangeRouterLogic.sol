@@ -263,16 +263,18 @@ contract CcExchangeRouterLogic is
         );
 
         // Find remained amount after reducing fees
-        _mintAndReduceFees(_lockerLockingScript, txId);
+        _mintAndCalculateFees(_lockerLockingScript, txId);
 
-        // Handle fast request
-        if (request.speed == 1) {
+        if (request.speed == 1) { // Handle fast request
+            /* 
+                If there was a filler who filled the request with the same parameters,
+                we will send the TeleBTC to the filler
+            */
             address filler = fillerAddress[txId][request.recipientAddress][
                 request.path[request.path.length - 1]
-            ][request.outputAmount][destinationChainId];
+            ][request.outputAmount][destinationChainId][extendedCcExchangeRequests[txId].bridgeFee];
 
-            if (filler != address(0)) {
-                // If the request has been filled
+            if (filler != address(0)) { // Request has been filled
                 // Send TeleBTC to filler who filled the request
                 _sendTeleBtcToFiller(
                     filler,
@@ -280,19 +282,10 @@ contract CcExchangeRouterLogic is
                     _lockerLockingScript,
                     destinationChainId
                 );
-                // TODO: emit event
                 return true;
-            } else {
-                // If the request has not been filled
-                // Set the request as a normal request
+            } else { // Request has not been filled
+                // Treat it as a normal request
                 ccExchangeRequests[txId].speed = 0;
-
-                // Find new output amount
-                ccExchangeRequests[txId].outputAmount =
-                    (ccExchangeRequests[txId].outputAmount *
-                        (MAX_PROTOCOL_FEE - REGULAR_SLIPPAGE)) /
-                    MAX_PROTOCOL_FEE;
-                // Then treat it as a normal request (speed = 0)
             }
         }
 
@@ -318,22 +311,27 @@ contract CcExchangeRouterLogic is
         address _token,
         uint _amount,
         uint _destinationChainId,
-        uint _acrossRelayerFee
+        uint _bridgeFee
     ) external payable nonReentrant {
+        /* 
+            If another filler has filled the request with the same parameters,
+            the request will be rejected
+        */
         require(
             fillerAddress[_txId][_recipient][_token][_amount][
                 _destinationChainId
-            ] == address(0),
+            ][_bridgeFee] == address(0),
             "ExchangeRouter: already filled"
         );
 
-        if (_destinationChainId == chainId) {
-            // Requests that belongs to the current chain
+        if (_destinationChainId == chainId) { // Requests that belongs to the current chain
             if (_token == NATIVE_TOKEN) {
+                // Native token is sent to the recipient
                 require(msg.value == _amount, "ExchangeRouter: wrong amount");
                 (bool sentToRecipient, ) = _recipient.call{value: _amount}("");
                 require(sentToRecipient, "ExchangeRouter: transfer failed");
             } else {
+                // Transfer the token from the filler to the recipient
                 require(
                     IERC20(_token).transferFrom(
                         _msgSender(),
@@ -343,14 +341,13 @@ contract CcExchangeRouterLogic is
                     "ExchangeRouter: no allowance"
                 );
             }
-        } else {
-            // Requests that belongs to the other chain
+        } else { // Requests that belongs to the other chain
             _sendTokenToOtherChain(
                 _destinationChainId,
                 _token,
                 _amount,
                 _recipient,
-                _acrossRelayerFee
+                _bridgeFee
             );
         }
 
@@ -361,7 +358,7 @@ contract CcExchangeRouterLogic is
             _token,
             _amount,
             _destinationChainId,
-            _acrossRelayerFee
+            _bridgeFee
         );
     }
 
@@ -434,9 +431,15 @@ contract CcExchangeRouterLogic is
         bytes memory _lockerLockingScript,
         uint256 _destinationChainId
     ) private {
+        // Send fees to the teleporter, treasury, and third party
+        _sendFees(_txId);
+
         ccExchangeRequest memory request = ccExchangeRequests[_txId];
         extendedCcExchangeRequest
             memory extendedRequest = extendedCcExchangeRequests[_txId];
+
+        // Mark the request as completed
+        extendedCcExchangeRequests[_txId].isRequestCompleted = true;
 
         // Send TeleBTC to filler
         ITeleBTC(teleBTC).transfer(
@@ -520,32 +523,8 @@ contract CcExchangeRouterLogic is
             // If swap was successfull, user will get tokens on destination chain
             extendedCcExchangeRequests[_txId].isRequestCompleted = true;
 
-            /* 
-            Send fees:
-                1. Teleporter fee (network fee)
-                2. Protocol fee
-                3. Third party fee
-            */
-            if (ccExchangeRequests[_txId].fee > 0) {
-                ITeleBTC(teleBTC).transfer(
-                    _msgSender(),
-                    ccExchangeRequests[_txId].fee
-                );
-            }
-            if (extendedCcExchangeRequests[_txId].protocolFee > 0) {
-                ITeleBTC(teleBTC).transfer(
-                    treasury,
-                    extendedCcExchangeRequests[_txId].protocolFee
-                );
-            }
-            if (extendedCcExchangeRequests[_txId].thirdPartyFee > 0) {
-                ITeleBTC(teleBTC).transfer(
-                    thirdPartyAddress[
-                        extendedCcExchangeRequests[_txId].thirdParty
-                    ],
-                    extendedCcExchangeRequests[_txId].thirdPartyFee
-                );
-            }
+            // Send fees to the teleporter, treasury, and third party
+            _sendFees(_txId);
 
             if (_chainId != chainId) {
                 // If the destination chain is not the current chain
@@ -689,7 +668,7 @@ contract CcExchangeRouterLogic is
     /// @notice Mints teleBTC by calling lockers contract
     /// @param _lockerLockingScript Locker's locking script
     /// @param _txId The transaction ID of the request
-    function _mintAndReduceFees(
+    function _mintAndCalculateFees(
         bytes memory _lockerLockingScript,
         bytes32 _txId
     ) private {
@@ -718,6 +697,42 @@ contract CcExchangeRouterLogic is
             extendedCcExchangeRequests[_txId].protocolFee -
             networkFee -
             extendedCcExchangeRequests[_txId].thirdPartyFee;
+    }
+
+    /// @notice Transfers all associated fees for a successful swap
+    /// @param _txId The transaction ID of the request
+    function _sendFees(bytes32 _txId) private {
+        /* 
+        Send fees:
+            1. Teleporter fee (network fee)
+            2. Protocol fee
+            3. Third party fee
+        */
+        // Transfer network fee to teleporter
+        if (ccExchangeRequests[_txId].fee > 0) {
+            ITeleBTC(teleBTC).transfer(
+                _msgSender(),
+                ccExchangeRequests[_txId].fee
+            );
+        }
+        
+        // Transfer protocol fee to treasury
+        if (extendedCcExchangeRequests[_txId].protocolFee > 0) {
+            ITeleBTC(teleBTC).transfer(
+                treasury,
+                extendedCcExchangeRequests[_txId].protocolFee
+            );
+        }
+        
+        // Transfer third party fee
+        if (extendedCcExchangeRequests[_txId].thirdPartyFee > 0) {
+            ITeleBTC(teleBTC).transfer(
+                thirdPartyAddress[
+                    extendedCcExchangeRequests[_txId].thirdParty
+                ],
+                extendedCcExchangeRequests[_txId].thirdPartyFee
+            );
+        }
     }
 
     /// @notice Internal setter for relay contract address

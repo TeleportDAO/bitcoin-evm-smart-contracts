@@ -31,7 +31,7 @@ abstract contract CcExchangeRouterStorageV2 is ICcExchangeRouter {
 
     // New variables (third party)
 
-    // Other applications can integrate with TeleSwap. 
+    // Other applications can integrate with TeleSwap.
     // ID will be assigned to them
     // They will receive a third party fee for each transaction that is sent by them
     // This fee will be send to their third party address
@@ -40,11 +40,10 @@ abstract contract CcExchangeRouterStorageV2 is ICcExchangeRouter {
     mapping(uint => address) public thirdPartyAddress;
 
     // New variables (filler)
-
-    mapping(bytes32 => mapping(address => mapping(address => mapping(uint => mapping(uint => address)))))
+    mapping(bytes32 => mapping(address => mapping(address => mapping(uint => mapping(uint => mapping(uint => address))))))
         public fillerAddress;
-    // ^ [txId][recipient][token][amount][chainId] to filler address
-    uint constant REGULAR_SLIPPAGE = 1500;
+    // ^ [txId][recipient][token][amount][chainId][bridgeFee] to filler address
+    uint constant REGULAR_SLIPPAGE = 1500; // Not used
 
     address public retryerAdmin;
 }
