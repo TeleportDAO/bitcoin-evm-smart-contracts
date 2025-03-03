@@ -106,7 +106,7 @@ contract EthConnectorLogic is
             _thirdParty
         );
 
-        emit MsgSent(uniqueCounter, message, _token, _amounts[0]);
+        emit MsgSent(uniqueCounter, message, _token, _amounts[0], _relayerFeePercentage);
         _sendMsgUsingAcross(
             _token,
             _amounts[0],
@@ -141,7 +141,7 @@ contract EthConnectorLogic is
             _thirdParty
         );
 
-        emit MsgSentRune(uniqueCounter, message, _token, _amounts[0]);
+        emit MsgSentRune(uniqueCounter, message, _token, _amounts[0], _relayerFeePercentage);
         _sendMsgUsingAcross(
             _token,
             _amounts[0],

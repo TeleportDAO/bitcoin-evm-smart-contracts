@@ -292,7 +292,7 @@ contract RuneRouterLogic is
                 outputAmount,
                 params.request.outputToken,
                 params.fee,
-                params.thirdPartyAddress,
+                runeWrapRequests[params.txId].thirdPartyId,
                 params.txId,
                 params.request.speed,
                 params.request.chainId,
@@ -333,7 +333,7 @@ contract RuneRouterLogic is
                 params.request.outputAmount,
                 params.request.outputToken,
                 fees(0, 0, 0), // zero fee
-                params.thirdPartyAddress,
+                runeWrapRequests[params.txId].thirdPartyId,
                 params.txId,
                 params.request.speed,
                 params.request.chainId

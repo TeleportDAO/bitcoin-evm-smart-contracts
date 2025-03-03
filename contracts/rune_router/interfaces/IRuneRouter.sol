@@ -118,7 +118,7 @@ interface IRuneRouter {
         uint outputAmount,
         address outputToken,
         fees fee,
-        address thirdPartyAddress,
+        uint thirdPartyId,
         bytes32 txId,
         bool speed,
         uint chainId,
@@ -133,7 +133,7 @@ interface IRuneRouter {
         uint outputAmount,
         address outputToken,
         fees fee,
-        address thirdPartyAddress,
+        uint thirdPartyId,
         bytes32 txId,
         bool speed,
         uint chainId

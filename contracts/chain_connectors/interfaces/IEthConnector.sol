@@ -23,14 +23,16 @@ interface IEthConnector {
         uint256 uniqueCounter,
         bytes data,
         address sourceChainInputToken,
-        uint256 amount
+        uint256 amount,
+        int64 relayerFeePercentage
     );
 
     event MsgSentRune(
         uint256 uniqueCounter,
         bytes data,
         address sourceChainInputToken,
-        uint256 amount
+        uint256 amount,
+        int64 relayerFeePercentage
     );
 
     event AcrossUpdated(address oldAcross, address newAcross);
